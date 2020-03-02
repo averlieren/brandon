@@ -1,0 +1,10 @@
+[package]
+name = "brandon"
+version = "0.1.0"
+authors = ["Brandon Nguyen"]
+edition = "2018"
+
+[dependencies]
+num = "0.2.1"
+num-traits = "0.2"
+num-derive = "0.3.0"
