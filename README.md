@@ -42,10 +42,10 @@ STR: #STR "hello world\n" ; define hello world string
 | - | - | :--  | - | :-- |
 | 00000 | 0x00 | MOV | DST, SRC | DST := SRC |
 | 00001 | 0x01 | MEX | - | MEM[VAR1] := MEM[VAR2] |
-| 00010 | 0x02 | MRX | DST | DST := MEM[VAR1] |
+| 00010 | 0x02 | MRX | DST | DST := VAR1 |
 | 00011 | 0x03 | MMX | SRC | MEM[VAR1] := SRC
 | 00100 | 0x04 | NIL | DST | DST := NIL |
-| 00101 | 0x05 | LFM | DST, imm19 | DST := MEM[imm19] |
+| 00101 | 0x05 | LFX | DST | DST := MEM[VAR1] |
 | 00110 | 0x06 | STM | SRC, imm19 | MEM[imm19] := DST |
 | 00111 | 0x07 | JMP | DST, DAT | PC := DAT |
 | 00111 | 0x07 | JMP | DST, imm24 | PC := imm24 |
