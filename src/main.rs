@@ -40,8 +40,8 @@ enum Opcode {
     MRX,
     MMX,
     NIL,
-    LFM,
-    STM,
+    LFX,
+    SWX,
     JMP,
     JSR,
     CMP,
@@ -81,6 +81,17 @@ fn iread(mem: &mut [u32], addr: u32) -> Instruction {
     Instruction(data)
 }
 
+fn argread(mem: &mut [u32], addr: &mut u32) -> u32 {
+    let inst: Instruction = iread(mem, *addr + 1);
+    
+    if inst.get_op() != Some(Opcode::ARG) {
+        panic!("At {}, expected ARG instruction, got {} instead.", *addr, inst.get_opcode());
+    }
+
+    *addr += 1;
+    inst.mask(0xFFFFFF)
+}
+
 fn run() {
     // initialize virtual machine
 
@@ -91,14 +102,14 @@ fn run() {
 
     let program: Vec<u32> = vec![
         // Move into R29, address 0x002931
-        // 0x002929 | 0b00010_000000000000000000011101 0x0200001D - MRX R29
-        0x0200001D,
+        // 0x002929 | 0b00010_000000000000000000011100 0x0200001C - MRX R28
+        0x0200001C,
         // 0x00292A | 0b01011_000000000010100100110011 0x0B002933 - ARG 0x002933
         0x0B002933,
         
         // Then move data from R29 -> R00
-        // 0x00292B | 0b00000_100000000000000000011101 0x0080001D - MOV R00 R29
-        0x0080001D,
+        // 0x00292B | 0b00000_100000000000000000011100 0x0080001C - MOV R00 R28
+        0x0080001C,
         
         // 0x002939 is supposed to be in 0x002938!
         // 0x00292C | 0b00001_000000000000000000000000 0x01000000 - MEX
@@ -138,13 +149,11 @@ fn run() {
         mem[(0x002929 + addr) as usize] = *instruction;
     }
 
-
-    // set program counter to 0x2929
-    reg[RPC] = 0x002929;
-
     let mut running: bool = true;
 
     while running {
+        let mut incr = true; // choose whether or not to increment RPC
+
         let inst = iread(&mut mem, reg[RPC]);
         let op = inst.get_op();
 
@@ -188,20 +197,10 @@ fn run() {
                 additional ARG instructions.
                 */
 
-                // interpret next, and over next instructions
-                let next: Instruction = iread(&mut mem, reg[RPC] + 1);
-                let over: Instruction = iread(&mut mem, reg[RPC] + 2);
+                // DST/SRC values provided by ARGs
+                let DST: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let SRC: usize = argread(&mut mem, &mut reg[RPC]) as usize;
 
-                if next.get_op() != Some(Opcode::ARG) || over.get_op() != Some(Opcode::ARG) {
-                    // the next two instructions are not ARG
-                    running = false;
-                    println!("Halted execution, MEX missing ARG");
-                }
-                
-                let DST: usize = next.mask(0xFFFFFF) as usize;
-                let SRC: usize = over.mask(0xFFFFFF) as usize;
-
-                reg[RPC] += 2; // increment RPC
                 mem[DST] = mem[SRC];
             },
             Some(Opcode::MRX) => {
@@ -221,19 +220,8 @@ fn run() {
 
                 let DST: usize = inst.mask(0x1F) as usize;
 
-                // MRX argument is supplied by ARG
-                reg[RPC] += 1; // increment program counter
-                
-                // interpret next instruction
-                let next: Instruction = iread(&mut mem, reg[RPC]);
-                
-                if next.get_op() != Some(Opcode::ARG) {
-                    // Next instruction is not ARG
-                    running = false;
-                    println!("Halted execution, MRX missing ARG");
-                }
-
-                reg[DST] = next.mask(0xFFFFFF);
+                // MRX argument is provided by ARG
+                reg[DST] = argread(&mut mem, &mut reg[RPC]);
             },
             Some(Opcode::MMX) => {
                 /*
@@ -250,45 +238,177 @@ fn run() {
 
                 let SRC: usize = inst.mask(0x1F) as usize;
 
-                // MMX argument is supplied by ARG
-                reg[RPC] += 1; // increment program counter
-                
-                // interpret next instruction
-                let next: Instruction = iread(&mut mem, reg[RPC]);
-                
-                if next.get_op() != Some(Opcode::ARG) {
-                    // Next instruction is not ARG
-                    running = false;
-                    println!("Halted execution, MRX missing ARG");
-                }
-
-                let DST: usize  = next.mask(0xFFFFFF) as usize;
+                // MMX argument is provided by ARG
+                let DST: usize = argread(&mut mem, &mut reg[RPC]) as usize;
 
                 mem[DST] = reg[SRC];
             },
             Some(Opcode::NIL) => {
                 // NIL
             },
-            Some(Opcode::LFM) => {
-                // LFX
+            Some(Opcode::LFX) => {
+                /*
+                INSTRUCTION:
+                LFX <REGISTER | DST> (argument | src)
+                DECOMP:
+                00101 0000000000000000000 xxxxx
+                 \_ opcode  \_ filler      \_ dst
+                
+                NOTES:
+                Transfers data from memory into dst register.
+                */
+                let DST: usize = inst.mask(0x1F) as usize;
+                // LFX argument provided by ARG
+                let SRC: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+
+                reg[DST] = mem[SRC];
             },
-            Some(Opcode::STM) => {
-                // STM
+            Some(Opcode::SWX) => {
+                /*
+                INSTRUCTION:
+                SWX (argument | addr1)  (argument | addr2)
+                DECOMP:
+                00110 000000000000000000000000
+                 \_ opcode  \_ filler
+                
+                NOTES:
+                Swaps the data in addr1 and addr2.
+                Normally this would have been done by putting the value of addr1
+                into a register, then replacing the addr1 with addr2, then
+                setting the value of addr2 to the value stored in that register.
+                However, this is a virtual machine, and we have the luxury of
+                not needing to do this.
+                */
+
+                let ADDR1: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let ADDR2: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                
+                let SWP = mem[ADDR1];
+
+                mem[ADDR1] = mem[ADDR2];
+                mem[ADDR2] = SWP;
             },
             Some(Opcode::JMP) => {
-                // JMP (RET)
+                /*
+                INSTRUCTION:
+                JMP <REGISTER | SRC>
+                DECOMP:
+                00111 0000000000000000000 xxxxx
+                 \_ opcode  \_ filler      \_ src
+                
+                INSTRUCTION:
+                RET
+                DECOMP:
+                00111 0000000000000000000 11101
+                 \_ opcode  \_ filler      \_ src
+                
+                NOTES:
+                JMP jumps to an address stored in a register
+                RET jumps to the address stored in the LNK register (R29)
+                Do not increment RPC at end of cycle.
+                */
+                
+                incr = false;
+
+                let SRC: u32 = inst.mask(0x1F);
+                reg[RPC] = SRC;
             },
             Some(Opcode::JSR) => {
                 // JSR
+                /*
+                INSTRUCTION:
+                JSR <ADDR>
+                DECOMP:
+                01000 xxxxxxxxxxxxxxxxxxxxxxxx
+                 \_ opcode  \_ address
+                
+                NOTES:
+                Stores RPC into LNK, then jumps to address.
+                */
+                incr = false;
+                
+                let ADDR: u32 = inst.mask(0xFFFFFF);
+
+                // Do not want to execute the JSR instruction upon RET
+                // so increment RPC before storing.
+                reg[LNK] = reg[RPC] + 1; 
+                reg[RPC] = ADDR;
             },
-            Some(Opcode::CMP) => {
-                // CMP
-            },
-            Some(Opcode::CMZ) => {
-                // CMZ
+            Some(Opcode::CMP) | Some(Opcode::CMZ) => {
+                /*
+                INSTRUCTION:
+                CMP <REGISTER | CMP1> <REGISTER | CMP2>
+                DECOMP:
+                01001 000 0000xxxxx 0000000xxxxx
+                 |     |   \_ cmp1   \_ cmp2
+                 |     \_ flag
+                 \_ opcode
+                
+                NOTES:
+                If comparison tests are true, increment RPC by 1, else increment
+                RPC by 2. Typically a jump instruction would follow after this.
+
+                INSTRUCTION:
+                CMZ <REGISTER | CMP1>
+                DECOMP:
+                01010 000 000000000 0000000xxxxx
+                 |     \_ flag       \_ cmp1
+                 \_ opcode
+                
+                NOTES:
+                Compares cmp1 to 0, if true then increment RPC by 1, else
+                increment RPC by 2. Typically a jump instruction would follow
+                after this.
+                */
+                // We will handle RPC incrementation manually here
+                incr = false;
+
+                // Get flag to see what type of comparison to do
+                let FLAG: u32 = inst.smask(21, 0x7);
+                
+                // Get the registers to perform the comparison on
+                let CMP1: usize = inst.smask(12, 0x1F) as usize;
+                let CMP2: usize = inst.mask(0x1F) as usize;
+
+                // Get values to reduce the amount of typing required
+                let mut CMP1: u32 = reg[CMP1];
+                let mut CMP2: u32 = reg[CMP2];
+
+                if inst.get_op() == Some(Opcode::CMZ) {
+                    CMP1 = CMP2;
+                    CMP2 = 0;
+                }
+
+                let passed;
+
+                match FLAG {
+                    0b001 => passed = CMP1 == CMP2, // CEQ | CEZ
+                    0b010 => passed = CMP1 <= CMP2, // CEL | CNZ
+                    0b011 => passed = CMP1 >= CMP2, // CEG | CPZ
+                    0b100 => passed = CMP1 < CMP2,  // CLT | CLZ
+                    0b101 => passed = CMP1 > CMP2,  // CGT | CGZ
+                    _ => panic!("At {} found an unknown flag passed to CMP/CMD instruction.", reg[RPC])
+                }
+
+                if passed {
+                    reg[RPC] += 1;
+                } else {
+                    reg[RPC] += 2;
+                }
             },
             Some(Opcode::ARG) => {
-                // ARG
+                /*
+                INSTRUCTION:
+                ARG <IMM24>
+                DECOMP:
+                01010 xxxxxxxxxxxxxxxxxxxxxxxx
+                 \_ opcode  \_ imm24
+                
+                NOTES:
+                Provides an imm24 value as an argument to another, preceeding
+                instruction.
+                */
+                panic!("At {} found ARG instruction without accompanying command.", reg[RPC]);
             },
             Some(Opcode::ADD) => {
                 // ADD
@@ -346,7 +466,7 @@ fn run() {
                             let schr: u16 = (c & 0xFFFF) as u16; 
 
                             if c == &0x00000000 || bchr == 0x0000u16 {
-                                // Break if memory is filled with zeros, or if
+                                // Break if all 32 bits are zero, or if
                                 // the first 16 bits are zero.
                                 break;
                             } else if schr == 0x0000u16 {
@@ -378,7 +498,9 @@ fn run() {
             }
         }
 
-        reg[RPC] += 1;
+        if incr {
+            reg[RPC] += 1;
+        }
     }
 }
 
