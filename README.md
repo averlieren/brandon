@@ -50,6 +50,7 @@ MMX R01         ; move data from R01
 ARG 0x002939    ; to memory at 0x002939
 PNT             ; print starting at stored address in R00
 HLT             ; halt program
+STR: #STR "hello world\n"
 #END            ; end of file
 ```
 ```
