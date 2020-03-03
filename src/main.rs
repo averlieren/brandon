@@ -317,7 +317,7 @@ fn run() {
                 // JSR
                 /*
                 INSTRUCTION:
-                JSR <ADDR>
+                JSR <IMM24>
                 DECOMP:
                 01000 xxxxxxxxxxxxxxxxxxxxxxxx
                  \_ opcode  \_ address
@@ -401,7 +401,7 @@ fn run() {
                 INSTRUCTION:
                 ARG <IMM24>
                 DECOMP:
-                01010 xxxxxxxxxxxxxxxxxxxxxxxx
+                01011 xxxxxxxxxxxxxxxxxxxxxxxx
                  \_ opcode  \_ imm24
                 
                 NOTES:
@@ -411,22 +411,106 @@ fn run() {
                 panic!("At {} found ARG instruction without accompanying command.", reg[RPC]);
             },
             Some(Opcode::ADD) => {
-                // ADD
+                /*
+                INSTRUCTION:
+                ADD <REGISTER | DST> <REGISTER | A> <REGISTER |B>
+                DECOMP:
+                01100 000xxxxx 000xxxxx 000xxxxx
+                 \_ opcode  \_ dst   \_ a     \_ b
+                
+                NOTES:
+                Sums values of registers a and b, stores it in dst
+                */
+                let DST: usize = inst.smask(16, 0x1F) as usize;
+                let A: usize = inst.smask(8, 0x1F) as usize;
+                let B: usize = inst.mask(0x1F) as usize;
+
+                reg[DST] = reg[A] + reg[B];
             },
             Some(Opcode::SUB) => {
-                // SUB
+                /*
+                INSTRUCTION:
+                SUB <REGISTER | DST> <REGISTER | A> <REGISTER |B>
+                DECOMP:
+                01101 000xxxxx 000xxxxx 000xxxxx
+                 \_ opcode  \_ dst   \_ a     \_ b
+                
+                NOTES:
+                Subtracts values of registers a and b, stores it in dst
+                */
+                let DST: usize = inst.smask(16, 0x1F) as usize;
+                let A: usize = inst.smask(8, 0x1F) as usize;
+                let B: usize = inst.mask(0x1F) as usize;
+
+                reg[DST] = reg[A] - reg[B];
             },
             Some(Opcode::MUL) => {
-                // MUL
+                /*
+                INSTRUCTION:
+                MUL <REGISTER | DST> <REGISTER | A> <REGISTER |B>
+                DECOMP:
+                01110 000xxxxx 000xxxxx 000xxxxx
+                 \_ opcode  \_ dst   \_ a     \_ b
+                
+                NOTES:
+                Multiplies values of registers a and b, stores it in dst
+                */
+                let DST: usize = inst.smask(16, 0x1F) as usize;
+                let A: usize = inst.smask(8, 0x1F) as usize;
+                let B: usize = inst.mask(0x1F) as usize;
+
+                reg[DST] = reg[A] * reg[B];
             },
             Some(Opcode::DIV) => {
-                // DIV
+                /*
+                INSTRUCTION:
+                DIV <REGISTER | DST> <REGISTER | A> <REGISTER |B>
+                DECOMP:
+                01111 000xxxxx 000xxxxx 000xxxxx
+                 \_ opcode  \_ dst   \_ a     \_ b
+                
+                NOTES:
+                Integer division of a by b, stores remainder in RMD register
+                */
+                let DST: usize = inst.smask(16, 0x1F) as usize;
+                let A: usize = inst.smask(8, 0x1F) as usize;
+                let B: usize = inst.mask(0x1F) as usize;
+
+                reg[DST] = reg[A] / reg[B];
+                reg[RMD] = reg[A] % reg[B];
             },
             Some(Opcode::AND) => {
-                // AND
+                /*
+                INSTRUCTION:
+                AND <REGISTER | DST> <REGISTER | A> <REGISTER |B>
+                DECOMP:
+                10000 000xxxxx 000xxxxx 000xxxxx
+                 \_ opcode  \_ dst   \_ a     \_ b
+                
+                NOTES:
+                Computes the bitwise and of a and b
+                */
+                let DST: usize = inst.smask(16, 0x1F) as usize;
+                let A: usize = inst.smask(8, 0x1F) as usize;
+                let B: usize = inst.mask(0x1F) as usize;
+
+                reg[DST] = reg[A] & reg[B];
             },
             Some(Opcode::NOT) => {
-                // NOT
+                /*
+                INSTRUCTION:
+                NOT <REGISTER | DST> <REGISTER | A>
+                DECOMP:
+                10001 000xxxxx 00000000000xxxxx
+                 \_ opcode  \_ dst  \_ a
+                
+                NOTES:
+                Bitwise NOT of the value of register a, store in dst register
+                */
+                let DST: usize = inst.smask(16, 0x1F) as usize;
+                let A: usize = inst.mask(0x1F) as usize;
+
+                reg[DST] = !reg[A];
             },
             Some(Opcode::CAL) => {
                 /*
@@ -491,10 +575,23 @@ fn run() {
                 }
             },
             Some(Opcode::JPX) => {
-                // JPX
+                /*
+                INSTRUCTION:
+                JPX <IMM24>
+                DECOMP:
+                10011 xxxxxxxxxxxxxxxxxxxxxxxx
+                 \_ opcode  \_ addr
+                
+                NOTES:
+                Jumps directly to address provided
+                */
+                incr = false;
+
+                let ADDR: u32 = inst.mask(0xFFFFFF);
+                reg[RPC] = ADDR;
             },
             _ => {
-                // invalid opcode
+                panic!("At {} found unknown instruction with opcode {}", reg[RPC], inst.get_opcode())
             }
         }
 

@@ -71,8 +71,7 @@ HLT             ; halt program
 | 00101 | 0x05 | LFX | DST | DST := MEM[VAR1] |
 | 00110 | 0x06 | SWX | - | MEM[VAR1] := MEM[VAR2]<br> MEM[VAR2] := SWP |
 | 00111 | 0x07 | JMP | DST, DAT | PC := DAT |
-| 01000 | 0x08 | JSR | LBL | LNK := PC<br>PC := pos(LBL) |
-| 01000 | 0x08 | JSR | DST | LNK := PC<br>PC := DST |
+| 01000 | 0x08 | JSR | imm24 | LNK := PC<br>PC := imm24 |
 | 00111 | 0x07 | RET | - | PC := LNK |
 | 01001 | 0x09 | CEQ | CMP1, CMP2 | IF (CMP1 == CMP2), PC := PC + 1 |
 | 01001 | 0x09 | CEL | CMP1, CMP2 | IF (CMP1 <= CMP2), PC := PC + 1 |
@@ -92,4 +91,4 @@ HLT             ; halt program
 | 10000 | 0x10 | AND | DST, A, B | DST := A & B |
 | 10001 | 0x11 | NOT | DST, A | DST := NOT(A)
 | 10010 | 0x12 | CAL | VEC | LNK := PC<br>PC=VEC |
-| 10011 | 0x13 | JPX | - | PC := VAR1 |
+| 10011 | 0x13 | JPX | imm24 | PC := imm24 |
