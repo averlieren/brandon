@@ -92,4 +92,6 @@ STR: #STR "hello world\n"
 | 10000 | 0x10 | AND | DST, A, B | DST := A & B |
 | 10001 | 0x11 | NOT | DST, A | DST := NOT(A)
 | 10010 | 0x12 | CAL | VEC | LNK := PC<br>PC=VEC |
-| 10011 | 0x13 | JPX | imm24 | PC := imm24 |
+| 10011 | 0x13 | JPA | imm24 | PC := imm24 |
+| 10100 | 0x14 | FLX | - | MEM[VAR2] <- read(MEM[VAR1])
+| 10101 | 0x15 | ILX | - | f := read(MEM[VAR1]) <br> MEM[f[0:3]] <- f[3:]
