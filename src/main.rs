@@ -1,11 +1,26 @@
-#![allow(dead_code,non_snake_case)]
+#![allow(dead_code)]
 use std::fs;
 
 extern crate num;
+extern crate libc;
+
 #[macro_use]
 extern crate num_derive;
+
+
+use libc::c_int;
+
+extern "C" {
+    fn getchar() -> c_int;
+}
+
 struct Instruction(u32);
 
+const LNK: usize = 29;
+const RMD: usize = 30;
+const RPC: usize = 31;
+const KBS: usize = 0xFFFFFA;
+const KBD: usize = 0xFFFFFD;
 
 impl Instruction {
     fn val(&self) -> u32 {
@@ -61,24 +76,18 @@ enum Opcode {
     AND,
     NOT,
     CAL,
-    JPX
+    JPX,
+    FLX,
 }
 
-const LNK: usize = 29;
-const RMD: usize = 30;
-const RPC: usize = 31;
+fn get_char() -> i32 {
+    unsafe {
+        getchar()
+    }
+}
 
 fn mread(mem: &mut [u32], addr: u32) -> u32{
     let addr: usize = addr as usize;
-    if addr == 0x1FFFFFFF {
-        let buf = [0; 1];
-        
-        if buf[0] == 0 {
-            mem[0x1FFFFFFF] = 0;
-        } else {
-            mem[0x1FFFFFFF] = buf[0];
-        }
-    }
 
     mem[addr]
 }
@@ -99,23 +108,72 @@ fn argread(mem: &mut [u32], addr: &mut u32) -> u32 {
     inst.mask(0xFFFFFF)
 }
 
-fn load(mem: &mut [u32], file: &str) {
-    let data: Vec<u8> = fs::read(file)
-        .expect(&format!("Cannot open {}", file));
-    let lfh: u32 = (data[0] as u32) << 16u32
-                    | (data[1] as u32) << 8u32
-                    | data[2] as u32;
+fn read(file: &str) -> Vec<u8>{
+    fs::read(file)
+        .expect(
+            &format!("Cannot open {}", file)
+        )
+}
 
-    for i in (3..data.len()).step_by(4) {
-        let addr: usize = (lfh + (i as u32 - 3) / 4) as usize;
-        let cont: u32 = (data[i] as u32) << 24u32
-        | (data[i + 1] as u32) << 16u32
-        | (data[i + 2] as u32) << 8u32
-        | data[i + 3] as u32;
+fn mload(mem: &mut [u32], buf: &mut Vec<u8>, addr: u32) {
+    let len: usize = buf.len();
 
-        mem[addr] = cont;
+    if len % 4 != 0 {
+        // pad data so it fits into address
+        for _ in 0..len % 4 {
+            buf.push(0x00000000);
+        }
+    }
+    for i in (0..len).step_by(4) {
+        let head: usize = (addr + (i as u32 / 4)) as usize;
+        let data: u32 = 
+              (buf[i] as u32)     << 24u32
+            | (buf[i + 1] as u32) << 16u32
+            | (buf[i + 2] as u32) <<  8u32
+            | buf[i +3] as u32;
+
+        mem[head] = data;
     }
 }
+
+fn iload(mem: &mut[u32], file: &str) {
+    let mut buf: Vec<u8> = read(file);
+    let lfh: u32 =
+          (buf.remove(0) as u32) << 16u32
+        | (buf.remove(0) as u32) <<  8u32
+        | buf.remove(0) as u32;
+    
+    mload(mem, &mut buf, lfh);
+}
+
+fn rstring(mem: &mut [u32], start: u32) -> String {
+    // reads a UTF-16 string beginning at start until empty address or until
+    // address 0xFFFFFF.
+
+    let mut buf: Vec<u16> = Vec::new();
+    for data in &mem[start as usize ..] {
+        // get chars stored in 16 most and 16 least significant bits
+        let mchr: u16 = (data >> 16) as u16;
+        let lchr: u16 = (data & 0xFFFF) as u16;
+
+        if data == &0x00000000 || mchr == 0x0000u16 {
+            // break if mem[addr] is filled with zeros or if the first 16 bits
+            // are zero.
+            break;
+        } else if lchr == 0x0000u16 {
+            // If the last 16 bits are zero, and not the first 16, then write
+            // 16 most significant to buffer, then break.
+            buf.push(mchr);
+            break;
+        }
+
+        buf.push(mchr);
+        buf.push(lchr);
+    }
+
+    String::from_utf16(&buf).unwrap()
+}
+
 
 fn run() {
     // initialize virtual machine
@@ -124,9 +182,9 @@ fn run() {
     // use vec to put in heap rather than stack, stackoverflow otherwise
     let mut mem = vec![0; 16777216];
     let mut reg = vec![0; 32];
-
-    load(&mut mem, "hello_world.bin");
     let mut running: bool = true;
+
+    iload(&mut mem, "hello_world.bin");
 
     while running {
         let mut incr = true; // choose whether or not to increment RPC
@@ -155,9 +213,9 @@ fn run() {
                 if inst.smask(23, 0x001) == 1 {
                     // It's not required to use smask because the opcode is
                     // 0b00000, but it's good practice anyways.
-                    let DST: usize = inst.smask(12, 0x1F) as usize;
-                    let SRC: usize = inst.mask(0x1F) as usize;
-                    reg[DST] = reg[SRC];
+                    let dst: usize = inst.smask(12, 0x1F) as usize;
+                    let src: usize = inst.mask(0x1F) as usize;
+                    reg[dst] = reg[src];
                 }
             },
             Some(Opcode::MEX) => {
@@ -175,10 +233,10 @@ fn run() {
                 */
 
                 // DST/SRC values provided by ARGs
-                let DST: usize = argread(&mut mem, &mut reg[RPC]) as usize;
-                let SRC: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let dst: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let src: usize = argread(&mut mem, &mut reg[RPC]) as usize;
 
-                mem[DST] = mem[SRC];
+                mem[dst] = mem[src];
             },
             Some(Opcode::MRX) => {
                 /*
@@ -195,10 +253,10 @@ fn run() {
                 instruction; therefore, MRX must be followed by ARG.
                 */
 
-                let DST: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.mask(0x1F) as usize;
 
                 // MRX argument is provided by ARG
-                reg[DST] = argread(&mut mem, &mut reg[RPC]);
+                reg[dst] = argread(&mut mem, &mut reg[RPC]);
             },
             Some(Opcode::MMX) => {
                 /*
@@ -213,12 +271,12 @@ fn run() {
                 The dst memory address is supplied by an ARG instruction.
                 */
 
-                let SRC: usize = inst.mask(0x1F) as usize;
+                let src: usize = inst.mask(0x1F) as usize;
 
                 // MMX argument is provided by ARG
-                let DST: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let dst: usize = argread(&mut mem, &mut reg[RPC]) as usize;
 
-                mem[DST] = reg[SRC];
+                mem[dst] = reg[src];
             },
             Some(Opcode::NIL) => {
                 // NIL
@@ -234,11 +292,11 @@ fn run() {
                 NOTES:
                 Transfers data from memory into dst register.
                 */
-                let DST: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.mask(0x1F) as usize;
                 // LFX argument provided by ARG
-                let SRC: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let src: usize = argread(&mut mem, &mut reg[RPC]) as usize;
 
-                reg[DST] = mem[SRC];
+                reg[dst] = mem[src];
             },
             Some(Opcode::SWX) => {
                 /*
@@ -257,13 +315,13 @@ fn run() {
                 not needing to do this.
                 */
 
-                let ADDR1: usize = argread(&mut mem, &mut reg[RPC]) as usize;
-                let ADDR2: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let addr1: usize = argread(&mut mem, &mut reg[RPC]) as usize;
+                let addr2: usize = argread(&mut mem, &mut reg[RPC]) as usize;
 
-                let SWP = mem[ADDR1];
+                let swp = mem[addr1];
 
-                mem[ADDR1] = mem[ADDR2];
-                mem[ADDR2] = SWP;
+                mem[addr1] = mem[addr2];
+                mem[addr2] = swp;
             },
             Some(Opcode::JMP) => {
                 /*
@@ -287,8 +345,8 @@ fn run() {
 
                 incr = false;
 
-                let SRC: u32 = inst.mask(0x1F);
-                reg[RPC] = SRC;
+                let src: u32 = inst.mask(0x1F);
+                reg[RPC] = src;
             },
             Some(Opcode::JSR) => {
                 // JSR
@@ -304,12 +362,12 @@ fn run() {
                 */
                 incr = false;
 
-                let ADDR: u32 = inst.mask(0xFFFFFF);
+                let addr: u32 = inst.mask(0xFFFFFF);
 
                 // Do not want to execute the JSR instruction upon RET
                 // so increment RPC before storing.
                 reg[LNK] = reg[RPC] + 1; 
-                reg[RPC] = ADDR;
+                reg[RPC] = addr;
             },
             Some(Opcode::CMP) | Some(Opcode::CMZ) => {
                 /*
@@ -341,29 +399,29 @@ fn run() {
                 incr = false;
 
                 // Get flag to see what type of comparison to do
-                let FLAG: u32 = inst.smask(21, 0x7);
+                let flag: u32 = inst.smask(21, 0x7);
 
                 // Get the registers to perform the comparison on
-                let CMP1: usize = inst.smask(12, 0x1F) as usize;
-                let CMP2: usize = inst.mask(0x1F) as usize;
+                let cmp1: usize = inst.smask(12, 0x1F) as usize;
+                let cmp2: usize = inst.mask(0x1F) as usize;
 
                 // Get values to reduce the amount of typing required
-                let mut CMP1: u32 = reg[CMP1];
-                let mut CMP2: u32 = reg[CMP2];
+                let mut cmp1: u32 = reg[cmp1];
+                let mut cmp2: u32 = reg[cmp2];
 
                 if inst.get_op() == Some(Opcode::CMZ) {
-                    CMP1 = CMP2;
-                    CMP2 = 0;
+                    cmp1 = cmp2;
+                    cmp2 = 0;
                 }
 
                 let passed;
 
-                match FLAG {
-                    0b001 => passed = CMP1 == CMP2, // CEQ | CEZ
-                    0b010 => passed = CMP1 <= CMP2, // CEL | CNZ
-                    0b011 => passed = CMP1 >= CMP2, // CEG | CPZ
-                    0b100 => passed = CMP1 < CMP2,  // CLT | CLZ
-                    0b101 => passed = CMP1 > CMP2,  // CGT | CGZ
+                match flag {
+                    0b001 => passed = cmp1 == cmp2, // CEQ | CEZ
+                    0b010 => passed = cmp1 <= cmp2, // CEL | CNZ
+                    0b011 => passed = cmp1 >= cmp2, // CEG | CPZ
+                    0b100 => passed = cmp1 < cmp2,  // CLT | CLZ
+                    0b101 => passed = cmp1 > cmp2,  // CGT | CGZ
                     _ => panic!("At {} found an unknown flag passed to CMP/CMD instruction.", reg[RPC])
                 }
 
@@ -398,11 +456,11 @@ fn run() {
                 NOTES:
                 Sums values of registers a and b, stores it in dst
                 */
-                let DST: usize = inst.smask(16, 0x1F) as usize;
-                let A: usize = inst.smask(8, 0x1F) as usize;
-                let B: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.smask(16, 0x1F) as usize;
+                let a: usize = inst.smask(8, 0x1F) as usize;
+                let b: usize = inst.mask(0x1F) as usize;
 
-                reg[DST] = reg[A] + reg[B];
+                reg[dst] = reg[a] + reg[b];
             },
             Some(Opcode::SUB) => {
                 /*
@@ -415,11 +473,11 @@ fn run() {
                 NOTES:
                 Subtracts values of registers a and b, stores it in dst
                 */
-                let DST: usize = inst.smask(16, 0x1F) as usize;
-                let A: usize = inst.smask(8, 0x1F) as usize;
-                let B: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.smask(16, 0x1F) as usize;
+                let a: usize = inst.smask(8, 0x1F) as usize;
+                let b: usize = inst.mask(0x1F) as usize;
 
-                reg[DST] = reg[A] - reg[B];
+                reg[dst] = reg[a] - reg[b];
             },
             Some(Opcode::MUL) => {
                 /*
@@ -432,11 +490,11 @@ fn run() {
                 NOTES:
                 Multiplies values of registers a and b, stores it in dst
                 */
-                let DST: usize = inst.smask(16, 0x1F) as usize;
-                let A: usize = inst.smask(8, 0x1F) as usize;
-                let B: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.smask(16, 0x1F) as usize;
+                let a: usize = inst.smask(8, 0x1F) as usize;
+                let b: usize = inst.mask(0x1F) as usize;
 
-                reg[DST] = reg[A] * reg[B];
+                reg[dst] = reg[a] * reg[b];
             },
             Some(Opcode::DIV) => {
                 /*
@@ -449,12 +507,12 @@ fn run() {
                 NOTES:
                 Integer division of a by b, stores remainder in RMD register
                 */
-                let DST: usize = inst.smask(16, 0x1F) as usize;
-                let A: usize = inst.smask(8, 0x1F) as usize;
-                let B: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.smask(16, 0x1F) as usize;
+                let a: usize = inst.smask(8, 0x1F) as usize;
+                let b: usize = inst.mask(0x1F) as usize;
 
-                reg[DST] = reg[A] / reg[B];
-                reg[RMD] = reg[A] % reg[B];
+                reg[dst] = reg[a] / reg[b];
+                reg[RMD] = reg[a] % reg[b];
             },
             Some(Opcode::AND) => {
                 /*
@@ -467,11 +525,11 @@ fn run() {
                 NOTES:
                 Computes the bitwise and of a and b
                 */
-                let DST: usize = inst.smask(16, 0x1F) as usize;
-                let A: usize = inst.smask(8, 0x1F) as usize;
-                let B: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.smask(16, 0x1F) as usize;
+                let a: usize = inst.smask(8, 0x1F) as usize;
+                let b: usize = inst.mask(0x1F) as usize;
 
-                reg[DST] = reg[A] & reg[B];
+                reg[dst] = reg[a] & reg[b];
             },
             Some(Opcode::NOT) => {
                 /*
@@ -484,10 +542,10 @@ fn run() {
                 NOTES:
                 Bitwise NOT of the value of register a, store in dst register
                 */
-                let DST: usize = inst.smask(16, 0x1F) as usize;
-                let A: usize = inst.mask(0x1F) as usize;
+                let dst: usize = inst.smask(16, 0x1F) as usize;
+                let a: usize = inst.mask(0x1F) as usize;
 
-                reg[DST] = !reg[A];
+                reg[dst] = !reg[a];
             },
             Some(Opcode::CAL) => {
                 /*
@@ -509,6 +567,17 @@ fn run() {
                 */
 
                 match inst.mask(0xFF) {
+                    0x98 => {
+                        // INP ; CAL 0x98
+                        reg[0] = get_char() as u32;
+                        println!("{}", (reg[0] & 0xFFu32) as u8);
+                    },
+                    0x99 => {
+                        // OUT ; CAL 0x99
+                        // Prints out the 16 least significant bits in R00
+                        let chr: u16 = (reg[0] & 0xFFFF) as u16;
+                        print!("{}", String::from_utf16(&[chr]).unwrap());
+                    },
                     0x9A => {
                         // PNT ; CAL 0x9A
                         // Equivalent to LC-3 PUTS trap.
@@ -517,37 +586,13 @@ fn run() {
                         // Goto memory address stored in R00, loop through
                         // memory addresses until stopped.
 
-                        let mut string: Vec<u16> = Vec::new();
-
-                        for c in &mem[reg[0] as usize ..] {
-                            // char stored in first 16 bits
-                            let bchr: u16 = (c >> 16) as u16;
-
-                            // char stored in last 16 bits
-                            let schr: u16 = (c & 0xFFFF) as u16; 
-
-                            if c == &0x00000000 || bchr == 0x0000u16 {
-                                // Break if all 32 bits are zero, or if
-                                // the first 16 bits are zero.
-                                break;
-                            } else if schr == 0x0000u16 {
-                                // If the last 16 bits are zero, and not the
-                                // first 16, then push the first 16 into string,
-                                // then break.
-
-                                string.push(bchr);
-                                break;
-                            }
-
-                            string.push(bchr);
-                            string.push(schr);
-                        }
-                        print!("{}", String::from_utf16(&string).unwrap());
+                        let string_at_r0: String = rstring(&mut mem, reg[0]);
+                        println!("{}", string_at_r0);
                     },
                     0x9D => {
                         //println!("HLT ; CAL 0x9D");
                         running = false;
-                    }
+                    },
                     _ => {}
                 }
             },
@@ -564,12 +609,30 @@ fn run() {
                 */
                 incr = false;
 
-                let ADDR: u32 = inst.mask(0xFFFFFF);
-                reg[RPC] = ADDR;
+                let addr: u32 = inst.mask(0xFFFFFF);
+                reg[RPC] = addr;
+            },
+            Some(Opcode::FLX) => {
+                /*
+                INSTRUCTION:
+                FLX (argument | path_addr) (argument | load_addr)
+                DECOMP:
+                10100 000000000000000000000000
+                 \_ opcode  \_ filler
+
+                NOTES: Loads file from path string stored at path_addr to load_addr
+                */
+                //let LEN: u32 = inst.mask(0xFFFFFF);
+                let path_addr: u32 = argread(&mut mem, &mut reg[RPC]);
+                let load_addr: u32 = argread(&mut mem, &mut reg[RPC]);
+
+                // decode path and open file
+                let path: String = rstring(&mut mem, path_addr);
+                let mut buf: Vec<u8> = read(&path);
+                mload(&mut mem, &mut buf, load_addr);
             },
             _ => {
-                println!("{}", inst.val());
-                panic!("At {} found unknown instruction with opcode {}", reg[RPC], inst.get_opcode());
+                panic!("At {} found unknown instruction with value {}, opcode {}", reg[RPC], inst.val(), inst.get_opcode());
             }
         }
 
