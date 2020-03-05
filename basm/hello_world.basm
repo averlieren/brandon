@@ -1,0 +1,7 @@
+#LFH 0x002929   ; load file at 0x2929
+MRX R00         ; move following arg data to R00
+ARG STR         ; data is address of the string
+PNT             ; print strings starting at R00
+HLT             ; halt
+STR: #STR "hello world\n"
+#END            ; end of file
