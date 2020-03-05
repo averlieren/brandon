@@ -13,9 +13,9 @@ pub fn get_char() -> i32 {
     }
 }
 
-pub fn read(file: &str) -> Vec<u8>{
-    fs::read(file)
+pub fn read(path: &str) -> Vec<u8>{
+    fs::read(path)
         .expect(
-            &format!("Cannot open {}", file)
+            &format!("Cannot open {}", path)
         )
 }

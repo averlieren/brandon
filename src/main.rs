@@ -1,6 +1,6 @@
 extern crate bvm;
 
-use bvm::{VM};
+use bvm::vm::VM;
 
 fn main() {
     // Initialize virtual machine

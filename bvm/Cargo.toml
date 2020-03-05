@@ -1,10 +1,8 @@
 [package]
 name = "bvm"
 version = "0.1.0"
-authors = ["Brandon Nguyen <brandon.nguyen1129@gmail.com>"]
+authors = ["Brandon Nguyen"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 num = "0.2.1"
