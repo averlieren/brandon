@@ -27,9 +27,9 @@ STR: #STR "hello world\n" ; define hello world string
 a more complicated hello
 ```
 #LFH 0x002929   ; load file at 0x002929
-MRX R29         ; load into R28
+MRX R28         ; load into R28
 ARG STR         ; the address of STR
-MOV R00 R29     ; move data of R28 to R00
+MOV R00 R28     ; move data of R28 to R00
 MEX             ; move data in memory
 ARG 0x002938    ; to 0x002938
 ARG 0x002939    ; from 0x002939
@@ -41,8 +41,8 @@ STR: #STR "hello world\n"
 #END            ; end of file
 ```
 ```
-00000000 00 29 29 02 00 00 1C 0B 00 29 33 00 80 00 1C 01
-00000010 00 00 00 0B 00 29 38 0B 00 29 39 03 00 00 01 0B
+00000000 00 29 29 00 86 00 1C 0B 00 29 33 00 82 00 1C 00
+00000010 84 00 00 0B 00 29 38 0B 00 29 39 00 88 00 01 0B
 00000020 00 29 39 12 00 00 9A 12 00 00 9D 00 68 00 65 00
 00000030 6C 00 6C 00 6F 00 20 00 77 00 6F 00 72 00 6C 29
 00000040 29 29 29 00 64 00 0A
@@ -52,10 +52,10 @@ STR: #STR "hello world\n"
 | opcode | hex | name | args | action |
 | - | - | :--  | - | :-- |
 | 00000 | 0x00 | MOV | DST, SRC | DST := SRC |
-| 00001 | 0x01 | MEX | - | MEM[VAR1] := MEM[VAR2] |
-| 00010 | 0x02 | MRX | DST | DST := VAR1 |
-| 00011 | 0x03 | MMX | SRC | MEM[VAR1] := SRC
-| 00100 | 0x04 | NIL | DST | DST := NIL |
+| 00000 | 0x00 | MEX | - | MEM[VAR1] := MEM[VAR2] |
+| 00000 | 0x00 | MRX | DST | DST := VAR1 |
+| 00000 | 0x00 | MMX | SRC | MEM[VAR1] := SRC
+| 00000 | 0x00 | MIX | ADDR | MEM[ADDR] := VAR1
 | 00101 | 0x05 | LFX | DST | DST := MEM[VAR1] |
 | 00110 | 0x06 | SWX | - | MEM[VAR1] := MEM[VAR2]<br> MEM[VAR2] := SWP |
 | 00111 | 0x07 | JMP | DST, DAT | PC := DAT |

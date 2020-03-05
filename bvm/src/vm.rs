@@ -5,7 +5,7 @@ pub mod instructions;
 pub mod externals;
 
 use std::cell::RefCell;
-use self::instructions::{Instruction, Opcode};
+use self::instructions::{Call, Instruction, Opcode};
 use self::externals::{get_char, read};
 
 pub const LNK: u32 = 29;
@@ -142,6 +142,10 @@ impl VM {
         self.reg.get(RPC)
     }
 
+    fn get_head_hex(&self) -> String {
+        format!("{:#010X}", self.get_head())
+    }
+
     fn set_head(&self, value: u32) {
         self.reg.set(RPC, value);
     }
@@ -163,7 +167,7 @@ impl VM {
         if inst.get_op() != Some(Opcode::ARG) {
             panic!(
                 "At {}, expected ARG instruction, got {} instead.",
-                format!("{:#08x}", self.get_head()),
+                self.get_head_hex(),
                 inst.get_opcode()
             )
         }
@@ -185,86 +189,106 @@ impl VM {
                     /*
                     INSTRUCTION:
                     MOV <REGISTER | DST> <REGISTER | SRC>
+                    MOV (argument | [addr | imm24]) (argument | [addr | imm24])
     
                     DECOMP:
-                    00000 1 000000xxxxx 0000000xxxxx
-                    |    \_ flag   \_ dst  \_ src
+                    00000 1 xxxxxx xxxxx 0000000xxxxx
+                    |     |  \_ mode  \_ dst     \_ src
+                    |     \_ flag
                     \_ opcode
     
                     NOTES:
-                    Transfers the data from SRC register to the DST register.
-                    Bit 6 is tied to 1 to ensure that that the memory contents of
-                    0x00000000 will not be confused with instruction MOV R00 R00
+                    Transfers data to and from registers and memory locations.
+                    Bit 6 is tied to 1 to ensure that 0x00000000 will not be
+                    confused as an instruction (MOV R00 R00)
                     */
-    
+
                     // Check to see if bit 6 is equal to 1
                     if inst.smask(23, 0x001) == 1 {
+                        // TODO: Update descriptions.
+
                         // It's not required to use smask because the opcode is
                         // 0b00000, but it's good practice anyways.
-                        let dst = inst.smask(12, 0x1F);
-                        let src = inst.mask(0x1F);
+                        let mode = inst.smask(17, 0x3F);
 
-                        self.reg.set(dst, self.reg.get(src));
+                        match mode {
+                            0x1 => {
+                                /*
+                                INSTRUCTION:
+                                MOV <REGISTER | DST> <REGISTER | SRC>
+                                DECOMP:
+                                00000 1 000000 xxxxx 0000000xxxxx
+                                |     |  \_ mode  \_ dst     \_ src
+                                |     \_ flag
+                                \_ opcode
+                                */
+                                // Move between registers
+                                let dst = inst.smask(12, 0x1F);
+                                let src = inst.mask(0x1F);
+
+                                self.reg.set(dst, self.reg.get(src));
+                            },
+                            0x2 => {
+                                /*
+                                INSTRUCTION:
+                                MEX (argument | dst) (argument | src)
+                                DECOMP:
+                                00001 000000000000000000000000
+                                \_ opcode  \_ filler
+                                */
+                                // Move data from memory address (arg2) to
+                                // register (arg1)
+                                let dst = self.read_arg();
+                                let src = self.read_arg();
+
+                                self.mem.write(dst, self.mem.read(src));
+                            },
+                            0x3 => {
+                                /*
+                                INSTRUCTION:
+                                MRX <REGISTER | DST> (argument)
+
+                                DECOMP:
+                                00010 0000000000000000000 xxxxx
+                                \_ opcode  \_ filler      \_ dst
+                                */
+                                // Moves immediate value (arg1) into register
+                                let dst = inst.mask(0x1F);
+                                let val = self.read_arg();
+
+                                self.reg.set(dst, val);
+                            },
+                            0x4 => {
+                                /*
+                                INSTRUCTION:
+                                MMX <REGISTER | SRC> (argument | dst)
+                                DECOMP:
+                                00011 0000000000000000000 xxxxx
+                                \_ opcode  \_ filler      \_ src
+
+                                NOTES:
+                                */
+                                // Moves data from register (inst | 0x1F)
+                                // into memory address (arg1)
+                                let src = inst.mask(0x1F);
+                                let addr = self.read_arg();
+
+                                self.mem.write(addr, src);
+                            },
+                            0x05 => {
+                                let addr = inst.mask(0xFFFFFF);
+                                let val = self.read_arg();
+                                
+                                self.mem.write(addr, val);
+                            }
+                            _ => {
+                                panic!("At {} found an unknown mode, {} , passed to MOV instruction.",
+                                self.get_head_hex(),
+                                format!("{:#06X}", mode)
+                                )
+                            }
+                        }
                     }
-                },
-                Some(Opcode::MEX) => {
-                    /*
-                    INSTRUCTION:
-                    MEX (argument | dst) (argument | src)
-                    DECOMP:
-                    00001 000000000000000000000000
-                    \_ opcode  \_ filler
-    
-                    NOTES:
-                    Transfers data from the src memory address to the dst memory
-                    address. The dst and src memory addresses are provided by
-                    additional ARG instructions.
-                    */
-
-                    // DST/SRC values provided by ARGs
-                    let dst = self.read_arg();
-                    let src = self.read_arg();
-                    
-                    self.mem.write(dst, self.mem.read(src));
-                },
-                Some(Opcode::MRX) => {
-                    /*
-                    INSTRUCTION:
-                    MRX <REGISTER | DST> (argument)
-
-                    DECOMP:
-                    00010 0000000000000000000 xxxxx
-                    \_ opcode  \_ filler      \_ dst
-    
-                    NOTES:
-                    The DST register is encoded in the last 5 bits, mask: 0x1F. The
-                    ARG instruction is used to provide the argument for the MRX
-                    instruction; therefore, MRX must be followed by ARG.
-                    */
-                    let dst = inst.mask(0x1F);
-
-                    // MRX argument is provided by ARG
-                    self.reg.set(dst, self.read_arg());
-                },
-                Some(Opcode::MMX) => {
-                    /*
-                    INSTRUCTION:
-                    MMX <REGISTER | SRC> (argument | dst)
-                    DECOMP:
-                    00011 0000000000000000000 xxxxx
-                    \_ opcode  \_ filler      \_ src
-
-                    NOTES:
-                    Transfers data from the src register into memory address dst.
-                    The dst memory address is supplied by an ARG instruction.
-                    */
-                    let src = inst.mask(0x1F);
-    
-                    // MMX argument is provided by ARG
-                    self.mem.write(self.read_arg(), self.reg.get(src));
-                },
-                Some(Opcode::NIL) => {
-                    // NIL
                 },
                 Some(Opcode::LFX) => {
                     /*
@@ -407,7 +431,10 @@ impl VM {
                         0b011 => passed = cmp1 >= cmp2, // CEG | CPZ
                         0b100 => passed = cmp1 < cmp2,  // CLT | CLZ
                         0b101 => passed = cmp1 > cmp2,  // CGT | CGZ
-                        _ => panic!("At {} found an unknown flag passed to CMP/CMD instruction.", format!("{:#08X}", self.get_head()))
+                        _ => panic!(
+                            "At {} found an unknown flag passed to CMP/CMD instruction.",
+                            self.get_head_hex()
+                        )
                     }
 
                     if passed {
@@ -428,7 +455,11 @@ impl VM {
                     Provides an imm24 value as an argument to another, preceeding
                     instruction.
                     */
-                    panic!("At {} found ARG instruction without accompanying command.", format!("{:#08X}", self.get_head()));
+
+                    panic!(
+                        "At {} found ARG instruction without accompanying command.",
+                        self.get_head_hex()
+                    );
                 },
                 Some(Opcode::ADD) => {
                     /*
@@ -560,24 +591,22 @@ impl VM {
                     The CAL instruction is similar to LC-3 traps.
                     Implemented here instead of in assembly code on the virtual
                     machine to improve efficiency.
-
-                    TABLE:
-                    - 0x9A: PNT
-                    - 0x9D: HLT
                     */
 
-                    match inst.mask(0xFF) {
-                        0x98 => {
+                    let call = num::FromPrimitive::from_u32(inst.mask(0xFF));
+
+                    match call {
+                        Some(Call::INP) => {
                             // INP ; CAL 0x98
                             self.reg.set(0, get_char() as u32);
-                        },
-                        0x99 => {
+                        }
+                        Some(Call::OUT) => {
                             // OUT ; CAL 0x99
                             // Prints out the 16 least significant bits in R00
                             let chr = (self.reg.get(0) & 0xFFFF) as u16;
                             print!("{}", String::from_utf16(&[chr]).unwrap());
                         },
-                        0x9A => {
+                        Some(Call::PNT) => {
                             // PNT ; CAL 0x9A
                             // Equivalent to LC-3 PUTS trap.
                             // BVM uses UTF-16BE encoding for strings.
@@ -585,8 +614,8 @@ impl VM {
                             // Read address in R00, goto address, print string.
                             print!("{}", self.mem.read_string(self.reg.get(0)));
                         },
-                        0x9D => {
-                            //println!("HLT ; CAL 0x9D");
+                        Some(Call::HLT) => {
+                            // HLT ; CAL 0x9D
                             self.running = false;
                         },
                         _ => {}
@@ -652,7 +681,10 @@ impl VM {
                 _ => {
                     panic!(
                         "At {} found unknown instruction with value {}, opcode {}",
-                        self.get_head(), inst.as_hex(), inst.get_ophex());
+                        self.get_head_hex(),
+                        inst.as_hex(),
+                        inst.get_ophex()
+                    );
                 }
             }
             

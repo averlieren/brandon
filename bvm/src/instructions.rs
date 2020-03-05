@@ -6,11 +6,11 @@ impl Instruction {
     }
 
     pub fn as_hex(&self) -> String {
-        format!("{:#06X}", *&self.0)
+        format!("{:#010X}", *&self.0)
     }
 
     pub fn as_bin(&self) -> String {
-        format!("{:#29b}", *&self.0)
+        format!("{:#031b}", *&self.0)
     }
 
     pub fn get_opcode(&self) -> u8 {
@@ -18,7 +18,7 @@ impl Instruction {
     }
 
     pub fn get_ophex(&self) -> String {
-        format!("{:#02X}", self.get_opcode())
+        format!("{:#04X}", self.get_opcode())
     }
 
     pub fn get_op(&self) -> Option<Opcode> {
@@ -49,11 +49,7 @@ impl Instruction {
 #[derive(FromPrimitive,PartialEq)]
 pub enum Opcode {
     MOV = 0,
-    MEX,
-    MRX,
-    MMX,
-    NIL,
-    LFX,
+    LFX = 0x5,
     SWX,
     JMP,
     JSR,
@@ -69,5 +65,14 @@ pub enum Opcode {
     CAL,
     JPA,
     FLX,
-    ILX
+    ILX,
+    INVALID
+}
+
+#[derive(FromPrimitive,PartialEq)]
+pub enum Call {
+    INP = 0x98,
+    OUT = 0x99,
+    PNT = 0x9A,
+    HLT = 0x9D
 }
