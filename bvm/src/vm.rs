@@ -5,6 +5,7 @@ pub mod instructions;
 pub mod externals;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use self::instructions::{Call, Instruction, Opcode};
 use self::externals::{get_char, read};
 
@@ -12,39 +13,72 @@ pub const LNK: u32 = 29;
 pub const RMD: u32 = 30;
 pub const RPC: u32 = 31;
 
-pub struct Memory {
-    mem: RefCell<Vec<u32>>
-}
-
-pub struct Registers {
-    reg: RefCell<Vec<u32>>
-}
+pub struct Memory(RefCell<HashMap<u32, u32>>);
+pub struct Registers(RefCell<HashMap<u32, u32>>);
 
 pub struct VM {
-    pub mem: Memory,
-    pub reg: Registers,
+    pub mem: Memory, // RAM for VM
+    pub reg: Registers, // VM registers
+    pub status: u8, // Status of VM
     pub running: bool
 }
 
 impl Memory {
     fn new() -> Memory {
-        Memory {
-            mem: RefCell::new(
-                vec![0; 0xFFFFFF]
-            )
+        Memory(
+            // Initialize HashMap with at least 65536 addresses before reallocating
+            RefCell::new(HashMap::with_capacity(65536))
+        )
+    }
+
+    pub fn exists(&self, addr: u32) -> bool {
+        self.0.borrow().contains_key(&addr)
+    }
+
+    pub fn write(&self, addr: u32, content: u32) {
+        *self.0.borrow_mut().entry(addr).or_insert(0) = content;
+    }
+
+    pub fn read(&self, addr: u32) -> u32{
+        if self.exists(addr) {
+            self.0.borrow()[&addr]
+        } else {
+            0
         }
     }
 
-    pub fn read(&self, addr: u32) -> u32 {
-        let addr = addr as usize;
+    pub fn read_string(&self, start: u32) -> String {
+        // Reads a UTF-16BE string beginning at start, terminating at a null byte.
+        let mut addr = start;
+        let mut buf: Vec<u16> = Vec::new();
 
-        self.mem.borrow()[addr]
+        loop {
+            let data = self.read(addr);
+            let mchr = (data >> 16) as u16;
+            let lchr = (data & 0xFFFF) as u16;
+            
+            if mchr == 0 {
+                // Encountered null byte, break.
+                break;
+            } else if lchr == 0 {
+                // Got null byte in last 16 bits, push first 16.
+                buf.push(mchr);
+                break;
+            }
+
+            buf.push(mchr);
+            buf.push(lchr);
+
+            addr += 1;
+        }
+
+        String::from_utf16(&buf).unwrap()
     }
 
     pub fn write_string(&self, addr: u32, string: &str) {
-        // Writes a UTF-16BE string beginning at addr.
-        let mut buf: Vec<u8> = Vec::new();
+        // Writes a UTF-16BE string starting at addr.
         let string: Vec<u16> = string.encode_utf16().collect();
+        let mut buf: Vec<u8> = Vec::with_capacity(string.len() * 2);
 
         for chr in string {
             buf.push((chr >> 8) as u8);
@@ -54,78 +88,51 @@ impl Memory {
         self.load(&mut buf, addr);
     }
 
-    pub fn read_string(&self, addr: u32) -> String{
-        // Reads a UTF-16BE string beginning at addr, until null byte.
-        let addr = addr as usize;
-        let mut buf: Vec<u16> = Vec::new();
-
-        for data in &self.mem.borrow()[addr ..] {
-            // Get chars stored in 16 most and 16 least significant bits
-            let mchr = (data >> 16) as u16;
-            let lchr = (data & 0xFFFF) as u16;
-
-            if mchr == 0 {
-                // Encountered null byte first, break.
-                break;
-            } else if lchr == 0 {
-                // Encountered string byte first, then null byte.
-                // Push first 16 bits to buffer, then break.
-                buf.push(mchr);
-                break;
-            }
-
-            buf.push(mchr);
-            buf.push(lchr);
-        }
-
-        String::from_utf16(&buf).unwrap()
-    }
-
-    pub fn load(&self, buf: &mut Vec<u8>, addr: u32) {
+    pub fn load(&self, buf: &mut Vec<u8>, start: u32) {
         let len: usize = buf.len();
-        
+
         if len % 4 != 0 {
-            // Pad data so that it fits
+            // Pad data to be a multiple of 4 (32 bit chunks)
             for _ in 0..len % 4 {
                 buf.push(0);
             }
         }
 
         for i in (0..len).step_by(4) {
-            let head = addr + (i as u32 / 4);
+            let addr = start + (i as u32 / 4);
             let data: u32 =
-                (buf[i] as u32)       << 24u32
+                (buf[i] as u32) << 24u32
                 | (buf[i + 1] as u32) << 16u32
-                | (buf[i + 2] as u32) <<  8u32
+                | (buf[i + 2] as u32) << 8u32
                 | buf[i + 3] as u32;
 
-            self.write(head, data);
+            self.write(addr, data);
         }
-    }
-
-    pub fn write(&self, addr: u32, data: u32) {
-        let addr = addr as usize;
-        self.mem.borrow_mut()[addr] = data;
     }
 }
 
 impl Registers {
     fn new() -> Registers {
-        Registers {
-            reg: RefCell::new(
-                vec![0; 0x20]
-            )
+        Registers(
+            // Initialize with at least 32 registers.
+            RefCell::new(HashMap::with_capacity(32))
+        )
+    }
+
+    pub fn exists(&self, register: u32) -> bool {
+        self.0.borrow().contains_key(&register)
+    }
+
+    pub fn get(&self, register: u32) -> u32 {
+        if self.exists(register) {
+            self.0.borrow()[&register]
+        } else {
+            0
         }
     }
 
-    fn get(&self, register: u32) -> u32 {
-        // Get value of register
-        self.reg.borrow()[register as usize]
-    }
-
-    fn set(&self, register: u32, value: u32) {
-        // Set value of register
-        self.reg.borrow_mut()[register as usize] = value;
+    pub fn set(&self, register: u32, data: u32) {
+        *self.0.borrow_mut().entry(register).or_insert(0) = data;
     }
 }
 
@@ -134,55 +141,56 @@ impl VM {
         VM {
             mem: Memory::new(),
             reg: Registers::new(),
+            status: 0,
             running: false
         }
     }
 
-    fn get_head(&self) -> u32 {
+    fn get_addr(&self) -> u32 {
         self.reg.get(RPC)
     }
 
-    fn get_head_hex(&self) -> String {
-        format!("{:#010X}", self.get_head())
+    fn get_addr_hex(&self) -> String {
+        format!("{:010X}", self.get_addr())
     }
 
-    fn set_head(&self, value: u32) {
+    fn set_addr(&self, value: u32) {
         self.reg.set(RPC, value);
     }
 
-    fn incr_head(&self) {
-        self.reg.set(RPC, self.reg.get(RPC) + 1);
+    fn incr_addr(&self) {
+        self.reg.set(RPC, self.get_addr() + 1);
     }
 
     fn read_instruction(&self, addr: u32) -> Instruction {
-        // Return the instruction found in memory at addr
         Instruction(
             self.mem.read(addr)
         )
     }
 
     fn read_arg(&self) -> u32 {
-        let inst = self.read_instruction(self.get_head() + 1);
+        let inst = self.read_instruction(self.get_addr() + 1);
 
         if inst.get_op() != Some(Opcode::ARG) {
             panic!(
-                "At {}, expected ARG instruction, got {} instead.",
-                self.get_head_hex(),
+                "At {}, expected ARG isntruction, got {} instead.",
+                self.get_addr_hex(),
                 inst.get_opcode()
             )
         }
 
-        self.incr_head();
+        self.incr_addr();
         inst.mask(0xFFFFFF)
     }
 
     pub fn run(&mut self) {
-        self.set_head(0);
+        self.set_addr(0);
         self.running = true;
+        self.status = 1;
 
-        while self.running {
+        while self.running && self.status != 0 {
             let mut incr = true;
-            let inst = self.read_instruction(self.get_head());
+            let inst = self.read_instruction(self.get_addr());
 
             match inst.get_op() {
                 Some(Opcode::MOV) => {
@@ -283,7 +291,7 @@ impl VM {
                             }
                             _ => {
                                 panic!("At {} found an unknown mode, {} , passed to MOV instruction.",
-                                self.get_head_hex(),
+                                self.get_addr_hex(),
                                 format!("{:#06X}", mode)
                                 )
                             }
@@ -354,8 +362,8 @@ impl VM {
 
                     incr = false;
                     let addr = inst.mask(0x1F);
-                    
-                    self.set_head(self.reg.get(addr));
+
+                    self.set_addr(self.reg.get(addr));
                 },
                 Some(Opcode::JSR) => {
                     // JSR
@@ -375,8 +383,8 @@ impl VM {
 
                     // Do not want to execute the JSR instruction upon RET
                     // so increment RPC before storing.
-                    self.reg.set(LNK, self.get_head() + 1);
-                    self.set_head(addr);
+                    self.reg.set(LNK, self.get_addr() + 1);
+                    self.set_addr(addr);
                 },
                 Some(Opcode::CMP) | Some(Opcode::CMZ) => {
                     /*
@@ -433,14 +441,14 @@ impl VM {
                         0b101 => passed = cmp1 > cmp2,  // CGT | CGZ
                         _ => panic!(
                             "At {} found an unknown flag passed to CMP/CMD instruction.",
-                            self.get_head_hex()
+                            self.get_addr_hex()
                         )
                     }
 
                     if passed {
-                        self.incr_head();
+                        self.incr_addr();
                     } else {
-                        self.set_head(self.get_head() + 2);
+                        self.set_addr(self.get_addr() + 2);
                     }
                 },
                 Some(Opcode::ARG) => {
@@ -458,7 +466,7 @@ impl VM {
 
                     panic!(
                         "At {} found ARG instruction without accompanying command.",
-                        self.get_head_hex()
+                        self.get_addr_hex()
                     );
                 },
                 Some(Opcode::ADD) => {
@@ -616,7 +624,7 @@ impl VM {
                         },
                         Some(Call::HLT) => {
                             // HLT ; CAL 0x9D
-                            self.running = false;
+                            self.status = 0;
                         },
                         _ => {}
                     }
@@ -635,7 +643,7 @@ impl VM {
                     incr = false;
 
                     let addr = inst.mask(0xFFFFFF);
-                    self.set_head(addr);
+                    self.set_addr(addr);
                 },
                 Some(Opcode::FLX) => {
                     /*
@@ -681,16 +689,82 @@ impl VM {
                 _ => {
                     panic!(
                         "At {} found unknown instruction with value {}, opcode {}",
-                        self.get_head_hex(),
+                        self.get_addr_hex(),
                         inst.as_hex(),
                         inst.get_ophex()
                     );
                 }
             }
-            
+
             if incr {
-                self.incr_head();
+                self.incr_addr();
+            }
+            if self.status == 2 {
+                self.running = false;
             }
         }
     }
+}
+
+#[test]
+fn test_mem_write() {
+    let mem = Memory::new();
+
+    mem.write(0x2929, 0x89ABCDEF);
+    assert_eq!(0x89ABCDEF, mem.read(0x2929));
+}
+
+#[test]
+fn test_mem_mul_write() {
+    let mem = Memory::new();
+
+    mem.write(0x2929, 0x89ABCDEF);
+    mem.write(0x2929, 0xFEDCBA98);
+
+    assert_eq!(0xFEDCBA98, mem.read(0x2929));
+}
+
+#[test]
+fn test_mem_load() {
+    let mut buf: Vec<u8> = vec![
+        0x00,0x68,0x00,0x65, // 0x2929
+        0x00,0x6c,0x00,0x6c, // 0x292A
+        0x00,0x6f,0x00,0x20, // 0x292B
+        0x00,0x77,0x00,0x6f, // 0x292C
+        0x00,0x72,0x00,0x6c, // 0x292D
+        0x00,0x64 // 0x292E
+    ];
+    let mem = Memory::new();
+    
+    mem.load(&mut buf, 0x2929);
+
+    assert_eq!(0x00680065, mem.read(0x2929));
+    assert_eq!(0x006C006C, mem.read(0x292A));
+    assert_eq!(0x006F0020, mem.read(0x292B));
+    assert_eq!(0x0077006F, mem.read(0x292C));
+    assert_eq!(0x0072006C, mem.read(0x292D));
+    assert_eq!(0x00640000, mem.read(0x292E));
+}
+
+#[test]
+fn test_mem_write_string() {
+    let mem = Memory::new();
+
+    mem.write_string(0x2929, "hello world");
+
+    assert_eq!(0x00680065, mem.read(0x2929));
+    assert_eq!(0x006C006C, mem.read(0x292A));
+    assert_eq!(0x006F0020, mem.read(0x292B));
+    assert_eq!(0x0077006F, mem.read(0x292C));
+    assert_eq!(0x0072006C, mem.read(0x292D));
+    assert_eq!(0x00640000, mem.read(0x292E));
+}
+
+#[test]
+fn test_mem_read_string() {
+    let mem = Memory::new();
+
+    mem.write_string(0x2929, "hello world");
+
+    assert_eq!(mem.read_string(0x2929), "hello world");
 }

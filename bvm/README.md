@@ -1,12 +1,12 @@
 # bvm
 the **brandon virtual machine** is a register based virtual machine inspired by LC-3/Lua
-- there exists 2<sup>24</sup> memory locations, each address storing upto 32 bits
-- there exists 29 general purpose registers
-- a link register
-- a remainder register
-- a program counter register
+- there exists an arbitrary amount of memory addresses and registers
+- for legacy reasons
+    - LNK (link) register is set to 29
+    - RMD (remainder) register is set to 30
+    - RPC (program counter) register is set to 31
 - each instruction is 29 bits
-    - opcode occupies 5 bits, or `ceil(log_2(29))`
+    - the opcode occupies the first 5 bits
 
 hello world assembly
 ```

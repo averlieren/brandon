@@ -13,10 +13,7 @@ struct Label {
 
 fn match_opcode(opcode: &str) -> Opcode {
     match opcode {
-        "MOV" => Opcode::MOV,
-        "MEX" => Opcode::MOV,
-        "MRX" => Opcode::MOV,
-        "MMX" => Opcode::MOV,
+        "MOV" | "MEX" | "MRX" | "MMX" | "MIX"=> Opcode::MOV,
         "LFX" => Opcode::LFX,
         "SWX" => Opcode::SWX,
         "JMP" => Opcode::JMP,
