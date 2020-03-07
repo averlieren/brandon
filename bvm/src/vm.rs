@@ -151,7 +151,7 @@ impl VM {
     }
 
     fn get_addr_hex(&self) -> String {
-        format!("{:010X}", self.get_addr())
+        format!("{:#010X}", self.get_addr())
     }
 
     fn set_addr(&self, value: u32) {

@@ -2,17 +2,11 @@ extern crate bvm;
 extern crate regex;
 
 use std::u32;
-use std::collections::HashSet;
 use bvm::instructions::{Call, Instruction, Opcode};
 use regex::Regex;
 
-struct Label {
-    name: String,
-    addr: u32
-}
-
-fn match_opcode(opcode: &str) -> Opcode {
-    match opcode {
+fn match_opcode(token: &str) -> Opcode {
+    match token {
         "MOV" | "MEX" | "MRX" | "MMX" | "MIX"=> Opcode::MOV,
         "LFX" => Opcode::LFX,
         "SWX" => Opcode::SWX,
@@ -35,11 +29,38 @@ fn match_opcode(opcode: &str) -> Opcode {
     }
 }
 
+fn match_call(token: &str) -> Call {
+    match token {
+        "INP" => Call::INP,
+        "OUT" => Call::OUT,
+        "PNT" => Call::PNT,
+        "HLT" => Call::HLT,
+        _ => Call::INVALID
+    }
+}
+
+fn decode(line: &str) -> u32 {
+    let comment = Regex::new(
+        r";.*"
+    ).unwrap();
+
+    let line = comment.replace_all(line, "");
+    let tokens: Vec<&str> = line.split(" ").collect();
+    let mut instruction = 0;
+
+    if match_opcode(tokens[0]) != Opcode::INVALID {
+        instruction = (match_opcode(tokens[0]) as u32) << 24;
+    } else if match_call(tokens[0]) != Call::INVALID {
+        instruction = (Opcode::CAL as u32) << 24
+            | (match_call(tokens[0]) as u32);
+    } else {
+        // TODO
+    }
+
+    instruction
+}
 
 fn main() {
-    let mut buf: Vec<u32> = Vec::new();
-    //let mut labels = HashSet::new();
-    let mut addr: u32 = 0;
     let asm: Vec<&str> = vec![
         "#LFH 0x002929 ; load file at address 0x2929",
         "MRX R00 ; move the data supplied by arg to R00",
@@ -49,50 +70,15 @@ fn main() {
         "STR: #STR \"hello world\\n\" ; the string",
         "#END ; end of file"
     ];
+}
 
-    let comment = Regex::new(
-        r";.*"
-    ).unwrap();
+#[test]
+fn test_decode_call() {
+    assert_eq!(decode("HLT"), 0x1200009D);
+}
 
-    let label = Regex::new(
-        r"([^\s]*?):"
-    ).unwrap();
-
-    for line in asm {
-        let line = comment.replace_all(line, "");
-        let split: Vec<&str> = line.split(" ").collect();
-
-        // check if label
-        let lbl = label.captures(split[0]);
-        if lbl.is_some() {
-            let lbl = lbl.unwrap().get(1).map_or("", |m| m.as_str());
-            println!("{}", lbl);
-        } else {
-            match split[0] {
-                "#LFH" => {
-                    let lfh = split[1];
-                    let lfh = lfh.trim_start_matches("0x");
-                    let lfh = u32::from_str_radix(lfh, 16).unwrap();
-    
-                    addr = lfh;
-                    buf.push(lfh)
-                },
-                "#END" => {},
-                "PNT" => {
-                    buf.push(
-                        0x12_00_00_00 | Call::PNT as u32
-                    )
-                },
-                "HLT" => {
-                    buf.push(
-                        0x12_00_00_00 | Call::HLT as u32
-                    )
-                },
-                _ => {
-                    let opcode = match_opcode(split[0]);
-                    println!("{}", opcode as u8);
-                }
-            }
-        }
-    }
+#[test]
+fn test_decode_opcode() {
+    assert_eq!(decode("MOV R00 R01") >> 24, 0);
+    assert_eq!(decode("ARG 123456789") >> 24, 0x0B);
 }

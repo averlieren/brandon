@@ -74,5 +74,6 @@ pub enum Call {
     INP = 0x98,
     OUT = 0x99,
     PNT = 0x9A,
-    HLT = 0x9D
+    HLT = 0x9D,
+    INVALID
 }
