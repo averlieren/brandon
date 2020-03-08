@@ -46,11 +46,10 @@ impl Instruction {
     }
 }
 
-#[derive(FromPrimitive,PartialEq)]
+#[derive(Copy,FromPrimitive,PartialEq)]
 pub enum Opcode {
     MOV = 0,
-    LFX = 0x5,
-    SWX,
+    SWX = 6,
     JMP,
     JSR,
     CMP,

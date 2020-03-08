@@ -241,7 +241,7 @@ impl VM {
                                 INSTRUCTION:
                                 MEX (argument | dst) (argument | src)
                                 DECOMP:
-                                00001 000000000000000000000000
+                                00000  000000000000000000000000
                                 \_ opcode  \_ filler
                                 */
                                 // Move data from memory address (arg2) to
@@ -257,7 +257,7 @@ impl VM {
                                 MRX <REGISTER | DST> (argument)
 
                                 DECOMP:
-                                00010 0000000000000000000 xxxxx
+                                00000 0000000000000000000 xxxxx
                                 \_ opcode  \_ filler      \_ dst
                                 */
                                 // Moves immediate value (arg1) into register
@@ -271,7 +271,7 @@ impl VM {
                                 INSTRUCTION:
                                 MMX <REGISTER | SRC> (argument | dst)
                                 DECOMP:
-                                00011 0000000000000000000 xxxxx
+                                00000 0000000000000000000 xxxxx
                                 \_ opcode  \_ filler      \_ src
 
                                 NOTES:
@@ -288,6 +288,23 @@ impl VM {
                                 let val = self.read_arg();
                                 
                                 self.mem.write(addr, val);
+                            },
+                            0x06 => {
+                                /*
+                                INSTRUCTION:
+                                MFX <REGISTER | DST> (argument | src)
+                                DECOMP:
+                                00000 0000000000000000000 xxxxx
+                                \_ opcode  \_ filler      \_ dst
+
+                                NOTES:
+                                Transfers data from memory into dst register.
+                                */
+
+                                let dst = inst.mask(0x1F);
+                                // LFX argument provided by ARG
+                                let src = self.read_arg();
+                                self.reg.set(dst, self.reg.get(src));
                             }
                             _ => {
                                 panic!("At {} found an unknown mode, {} , passed to MOV instruction.",
@@ -297,23 +314,6 @@ impl VM {
                             }
                         }
                     }
-                },
-                Some(Opcode::LFX) => {
-                    /*
-                    INSTRUCTION:
-                    LFX <REGISTER | DST> (argument | src)
-                    DECOMP:
-                    00101 0000000000000000000 xxxxx
-                    \_ opcode  \_ filler      \_ dst
-
-                    NOTES:
-                    Transfers data from memory into dst register.
-                    */
-
-                    let dst = inst.mask(0x1F);
-                    // LFX argument provided by ARG
-                    let src = self.read_arg();
-                    self.reg.set(dst, self.reg.get(src));
                 },
                 Some(Opcode::SWX) => {
                     /*
