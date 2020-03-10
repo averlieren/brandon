@@ -33,6 +33,20 @@ impl Token {
     fn get(&self) -> &str {
         &self.0
     }
+
+    fn from_hex_str(&self, prefix: &str) -> u32 {
+        let data = &self.0;
+        let data = data.trim_start_matches(prefix);
+
+        u32::from_str_radix(data, 16).unwrap()
+    }
+
+    fn from_str(&self, prefix: &str) -> u32 {
+        let data = &self.0;
+        let data = data.trim_start_matches(prefix);
+
+        u32::from_str_radix(data, 10).unwrap()
+    }
 }
 
 enum TokenType {
@@ -67,89 +81,129 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    fn has_next(&self) -> bool {
+        self.tokens.borrow().len() != 0
+    }
+
     fn next(&self) -> Token {
         self.tokens.borrow_mut().remove(0)
     }
 
-    fn decode(&self) -> u32 {
-        let mut instruction: u32 = 0;
-        let token = self.next();
+    fn decode(&mut self) -> Vec<u32> {
+        let mut instructions: Vec<u32> = Vec::new();
 
-        match token.get_type() {
-            TokenType::DIRECTIVE => {
-                match token.get() {
-                    "#LFH" => {},
-                    "#END" => {}
-                    _ => {}
-                }
-            },
-            TokenType::OPCODE => {
-                match match_opcode(token.get()) {
-                    Opcode::MOV => {
-                        instruction |= 1 << 23;
-    
-                        match token.get() {
-                            "MOV" => {
-                                instruction |= 0b000001 << 17;
-                            },
-                            "MEX" => instruction |= 0b000010 << 17,
-                            "MRX" => instruction |= 0b000011 << 17,
-                            "MMX" => instruction |= 0b000100 << 17,
-                            "MIX" => instruction |= 0b000101 << 17,
-                            "MFX" => instruction |= 0b000110 << 17,
-                            _ => {}
-                        }
-                    },
-                    Opcode::SWX => {},
-                    Opcode::JMP => {
-                        if token.get() == "RET" {
-                            instruction |= 0b11101;
-                        }
-                    },
-                    Opcode::JSR => {},
-                    Opcode::CMP => {
-                        match token.get() {
-                            "CEQ" => {},
-                            "CEL" => {},
-                            "CEG" => {},
-                            "CLT" => {},
-                            "CGT" => {},
-                            _ => {}
-                        }
-                    },
-                    Opcode::CMZ => {
-                        match token.get() {
-                            "CEZ" => {},
-                            "CNZ" => {},
-                            "CPZ" => {},
-                            "CLZ" => {},
-                            "CGZ" => {},
-                            _ => {}
-                        }
-                    },
-                    Opcode::ARG => {},
-                    Opcode::ADD => {},
-                    Opcode::SUB => {},
-                    Opcode::MUL => {},
-                    Opcode::DIV => {},
-                    Opcode::AND => {},
-                    Opcode::NOT => {},
-                    Opcode::CAL => {},
-                    Opcode::JPA => {},
-                    Opcode::FLX => {},
-                    Opcode::ILX => {}
-                    _ => {}
-                }
-            },
-            TokenType::CALL => {
-                instruction = (Opcode::CAL as u32) << 24;
-                instruction |= match_call(token.get()) as u32;
-            },
-            TokenType::ARGUMENT => {},
-            _ => {}
+        while self.has_next() {
+            let mut instruction: u32 = 0;
+            let token = self.next();
+            
+            match token.get_type() {
+                TokenType::DIRECTIVE => {
+                    match token.get() {
+                        "#LFH" => {
+                            let addr = self.next().from_hex_str("0x");
+
+                            self.addr = addr;
+                        },
+                        "#END" => {}
+                        _ => {}
+                    }
+                },
+                TokenType::OPCODE => {
+                    instruction |= (match_opcode(token.get()) as u32) << 24;
+                    match match_opcode(token.get()) {
+                        Opcode::MOV => {
+                            instruction |= 1 << 23;
+        
+                            match token.get() {
+                                "MOV" => {
+                                    let dst = self.next().from_str("R");
+                                    let src = self.next().from_str("R");
+
+                                    instruction |= 0b000001 << 17;
+                                    instruction |= dst << 12;
+                                    instruction |= src;
+                                },
+                                "MEX" => instruction |= 0b000010 << 17,
+                                "MRX" => {
+                                    let dst = self.next().from_str("R");
+                                    instruction |= 0b000011 << 17;
+                                    instruction |= dst;
+                                },
+                                "MMX" => {
+                                    let src = self.next().from_str("R");
+                                    instruction |= 0b000100 << 17;
+                                    instruction |= src;
+                                },
+                                "MIX" => {
+                                    let data = self.next().from_hex_str("0x");
+                                    instruction |= 0b000101 << 17;
+                                    instruction |= data;
+                                },
+                                "MFX" => {
+                                    let dst = self.next().from_str("R");
+                                    instruction |= 0b000110 << 17;
+                                    instruction |= dst;
+                                },
+                                _ => {}
+                            }
+                        },
+                        Opcode::SWX => {},
+                        Opcode::JMP => {
+                            if token.get() == "RET" {
+                                instruction |= 0b11101;
+                            }
+                        },
+                        Opcode::JSR => {},
+                        Opcode::CMP => {
+                            match token.get() {
+                                "CEQ" => {},
+                                "CEL" => {},
+                                "CEG" => {},
+                                "CLT" => {},
+                                "CGT" => {},
+                                _ => {}
+                            }
+                        },
+                        Opcode::CMZ => {
+                            match token.get() {
+                                "CEZ" => {},
+                                "CNZ" => {},
+                                "CPZ" => {},
+                                "CLZ" => {},
+                                "CGZ" => {},
+                                _ => {}
+                            }
+                        },
+                        Opcode::ARG => {
+                            instruction |= self.next().from_hex_str("0x");
+                        },
+                        Opcode::ADD => {},
+                        Opcode::SUB => {},
+                        Opcode::MUL => {},
+                        Opcode::DIV => {},
+                        Opcode::AND => {},
+                        Opcode::NOT => {},
+                        Opcode::CAL => {},
+                        Opcode::JPA => {},
+                        Opcode::FLX => {},
+                        Opcode::ILX => {}
+                        _ => {}
+                    }
+
+                    instructions.push(instruction);
+                },
+                TokenType::CALL => {
+                    instruction = (Opcode::CAL as u32) << 24;
+                    instruction |= match_call(token.get()) as u32;
+
+                    instructions.push(instruction);
+                },
+                TokenType::ARGUMENT => {},
+                _ => {}
+            }
         }
 
-        instruction
+        instructions
     }
 }
 
@@ -199,7 +253,7 @@ fn main() {
     let asm: Vec<String> = vec![
         "#LFH 0x002929   ; load file at 0x002929".to_owned(),
         "MRX R28         ; load into R28".to_owned(),           // 00 86 00 1C
-        "ARG STR         ; the address of STR".to_owned(),      // 0B 00 29 33
+        "ARG 0x002933    ; the address of STR".to_owned(),      // 0B 00 29 33
         "MOV R00 R28     ; move data of R28 to R00".to_owned(), // 00 82 00 1C
         "MEX             ; move data in memory".to_owned(),     // 00 84 00 00
         "ARG 0x002938    ; to 0x002938".to_owned(),             // 0B 00 29 38
@@ -209,13 +263,18 @@ fn main() {
         "PNT             ; print starting at stored address in R00".to_owned(),
                                                                 // 12 00 00 9A
         "HLT             ; halt program".to_owned(),            // 12 00 00 9D
-        "STR: #STR \"hello world\\n\"".to_owned(),
-        "#END            ; end of file".to_owned()
+        //"STR: #STR \"hello world\\n\"".to_owned(),
+        //"#END            ; end of file".to_owned()
     ];
 
-    let tokenizer = Tokenizer::new();
+    let mut tokenizer = Tokenizer::new();
     tokenizer.load(asm);
-    println!("{}", tokenizer.decode());
+
+    for inst in tokenizer.decode() {
+        println!("{}", 
+        format!("{:#010X}", inst)
+    );
+    }
 }
 
 /*
