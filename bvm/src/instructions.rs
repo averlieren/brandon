@@ -39,7 +39,7 @@ impl Instruction {
 
     pub fn shift(&self, shift: i8) -> u32 {
         if shift < 0 {
-            (&self.0 << (shift.abs() as u32))
+            &self.0 << (shift.abs() as u32)
         } else {
             &self.0 >> shift as u32
         }
