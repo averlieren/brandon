@@ -1,5 +1,5 @@
+#![allow(dead_code, unused_imports)]
 extern crate bvm;
-extern crate regex;
 
 use std::u32;
 use std::cell::RefCell;
@@ -17,6 +17,12 @@ struct Tokenizer<'a> {
     head: usize
 }
 
+struct Assembler<'a> {
+    tokens: &'a Vec<Token>,
+    addr: u32
+}
+
+#[derive(PartialEq)]
 enum TokenType {
     DIRECTIVE,
     STRING,
@@ -25,16 +31,12 @@ enum TokenType {
 }
 
 impl<'a> Tokenizer<'a> {
-    fn new() -> Tokenizer<'a> {
+    fn new(data: &'a str) -> Tokenizer<'a> {
         Tokenizer {
             tokens: RefCell::new(Vec::with_capacity(128)),
-            data: "",
+            data: data,
             head: 0
         }
-    }
-
-    fn load(&mut self, data: &'a str) {
-        self.data = data;
     }
 
     fn cur(&self) -> &'a str {
@@ -60,7 +62,6 @@ impl<'a> Tokenizer<'a> {
 
     fn tokenize(&mut self) {
         while self.head < self.data.len() {
-            println!("{} {}", self.head, self.data.len());
             match self.cur() {
                 "#" => {
                     let mut directive = String::new();
@@ -178,14 +179,183 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-fn main() {
-    let asm = "#LFH 0x002929\nMRX R29\nARG STR\nMOV R00 R28\nMEX\nARG 0x002938\nARG 0x002939\nMMX R01\nARG 0x002939\nPNT\nHLT\nSTR #STR \"hello world\\n\"\n";
-
-    let mut tokenizer = Tokenizer::new();
-    tokenizer.load(&asm);
-    tokenizer.tokenize();
-
-    for token in tokenizer.tokens.borrow().iter() {
-        println!("{}", token.val);
+impl<'a> Assembler<'a> {
+    fn new(tokens: &'a Vec<Token>) -> Assembler<'a> {
+        Assembler {
+            tokens: tokens,
+            addr: 0
+        }
     }
+
+    fn assemble(&mut self) {
+        let mut buf: Vec<&'a str> = Vec::with_capacity(128);
+        let mut labels: HashMap<&'a str, u32> = HashMap::with_capacity(32);
+        let mut tokens = self.tokens.iter();
+
+        loop {
+            let token = tokens.next();
+
+            if token.is_none() {
+                break;
+            }
+
+            let token = token.unwrap();
+
+            match token.r#type {
+                TokenType::DIRECTIVE => {
+                    match token.val.as_str() {
+                        "LFH" => {
+                            self.addr = tokens.next().unwrap().val.parse::<u32>().unwrap();
+                        },
+                        "STR" => {
+                            let string = &tokens.next().unwrap().val;
+                            let string: Vec<u16> = string.encode_utf16().collect();
+
+                            for i in (0..string.len()).step_by(2) {
+                                let mut mem = (*string.get(i).unwrap() as u32) << 16;
+                                if i + 1 < string.len() {
+                                    mem |= *string.get(i + 1).unwrap() as u32;
+                                }
+                                println!("{}", format!("{:#010X}", mem));
+                            }
+                        },
+                        _ => {}
+                    }
+                },
+                TokenType::WORD => {
+                    if match_opcode(&token.val) != Opcode::INVALID {
+                        let mut instruction: u32 = (match_opcode(&token.val) as u32) << 24;
+
+                        match match_opcode(&token.val) {
+                            Opcode::MOV => {
+                                instruction |= 1 << 23;
+
+                                match token.val.as_str() {
+                                    "MOV" => {
+                                        let dst = tokens.next().unwrap().val.parse::<u32>().unwrap();
+                                        let src = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                        instruction |= 0b000001 << 17;
+                                        instruction |= dst << 12;
+                                        instruction |= src;
+                                    },
+                                    "MEX" => instruction |=0b000010 << 17,
+                                    "MRX" => {
+                                        let dst = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                        instruction |= 0b000011 << 17;
+                                        instruction |= dst;
+                                    },
+                                    "MMX" => {
+                                        let src = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                        instruction |= 0b000100 << 17;
+                                        instruction |= src;
+                                    },
+                                    "MIX" => {
+                                        let data = tokens.next().unwrap().val.parse::<u32>().unwrap();
+                                        
+                                        instruction |= 0b000101 << 17;
+                                        instruction |= data;
+                                    },
+                                    "MFX" => {
+                                        let dst = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                        instruction |= 0b000110 << 17;
+                                        instruction |= dst;
+                                    },
+                                    _ => {}
+                                }
+                            },
+                            Opcode::SWX => {},
+                            Opcode::JMP => {
+                                if &token.val == "RET" {
+                                    instruction |= 0b11101;
+                                }
+                            },
+                            Opcode::JSR => {},
+                            Opcode::CMP => {
+                                match token.val.as_str() {
+                                    "CEQ" => {},
+                                    "CEL" => {},
+                                    "CEG" => {},
+                                    "CLT" => {},
+                                    "CGT" => {},
+                                    _ => {}
+                                }
+                            },
+                            Opcode::CMZ => {
+                                match token.val.as_str() {
+                                    "CEZ" => {},
+                                    "CNZ" => {},
+                                    "CPZ" => {},
+                                    "CLZ" => {},
+                                    "CGZ" => {},
+                                    _ => {}
+                                }
+                            },
+                            Opcode::ARG => {
+                                let next = tokens.next().unwrap();
+
+                                if next.r#type == TokenType::NUMBER {
+                                    instruction |= next.val.parse::<u32>().unwrap();
+                                }
+                            }
+                            _ => {}
+                        }
+                        println!("{}", format!("{:#010X}", instruction));
+                    } else if match_call(&token.val) != Call::INVALID {
+                        let mut instruction: u32 = (Opcode::CAL as u32) << 24;
+                        instruction |= match_call(&token.val) as u32;
+
+                        println!("{}", format!("{:#010X}", instruction));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn match_opcode(token: &str) -> Opcode {
+    match token {
+        "MOV" | "MEX" | "MRX" | "MMX" | "MIX" | "LFX" => Opcode::MOV,
+        "SWX" => Opcode::SWX,
+        "JMP" => Opcode::JMP,
+        "JSR" => Opcode::JSR,
+        "CMP" => Opcode::CMP,
+        "CMZ" => Opcode::CMZ,
+        "ARG" => Opcode::ARG,
+        "ADD" => Opcode::ADD,
+        "SUB" => Opcode::SUB,
+        "MUL" => Opcode::MUL,
+        "DIV" => Opcode::DIV,
+        "AND" => Opcode::AND,
+        "NOT" => Opcode::NOT,
+        "CAL" => Opcode::CAL,
+        "JPA" => Opcode::JPA,
+        "FLX" => Opcode::FLX,
+        "ILX" => Opcode::ILX,
+        _ => Opcode::INVALID
+    }
+}
+
+fn match_call(token: &str) -> Call {
+    match token {
+        "INP" => Call::INP,
+        "OUT" => Call::OUT,
+        "PNT" => Call::PNT,
+        "HLT" => Call::HLT,
+        _ => Call::INVALID
+    }
+}
+
+fn main() {
+    let asm = "#LFH 0x002929\nMRX R28\nARG 0x002933\nMOV R00 R28\nMEX\nARG 0x002938\nARG 0x002939\nMMX R01\nARG 0x002939\nPNT\nHLT\nSTR #STR \"hello worljjd\n\"\n";
+
+    let mut tokenizer = Tokenizer::new(&asm);
+    tokenizer.tokenize();
+    let tokens = tokenizer.tokens.borrow();
+    let mut assembler = Assembler::new(&tokens);
+    assembler.assemble();
 }
