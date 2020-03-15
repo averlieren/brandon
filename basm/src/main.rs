@@ -1,9 +1,12 @@
-#![allow(dead_code, unused_imports)]
 extern crate bvm;
 
 use std::u32;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::prelude::*;
+use std::slice;
+use std::mem;
 use bvm::instructions::{Call, Opcode};
 
 struct Token {
@@ -187,15 +190,15 @@ impl<'a> Assembler<'a> {
         }
     }
 
-    fn assemble(&mut self) {
-        let mut buf: Vec<&'a str> = Vec::with_capacity(128);
-        let mut labels: HashMap<&'a str, u32> = HashMap::with_capacity(32);
+    fn assemble(&mut self) -> HashMap<u32, u32> {
+        let mut buf: HashMap<u32, u32> = HashMap::with_capacity(128);
+        let mut labels: HashMap<String, Vec<u32>> = HashMap::with_capacity(32);
         let mut tokens = self.tokens.iter();
 
         loop {
             let token = tokens.next();
 
-            if token.is_none() {
+            if token.is_none() {    
                 break;
             }
 
@@ -213,10 +216,16 @@ impl<'a> Assembler<'a> {
 
                             for i in (0..string.len()).step_by(2) {
                                 let mut mem = (*string.get(i).unwrap() as u32) << 16;
+
                                 if i + 1 < string.len() {
                                     mem |= *string.get(i + 1).unwrap() as u32;
                                 }
-                                println!("{}", format!("{:#010X}", mem));
+
+                                if !&buf.contains_key(&self.addr) {
+                                    &buf.insert(self.addr, mem);
+                                }
+
+                                self.addr += 1;
                             }
                         },
                         _ => {}
@@ -273,16 +282,32 @@ impl<'a> Assembler<'a> {
                                     instruction |= 0b11101;
                                 }
                             },
-                            Opcode::JSR => {},
+                            Opcode::JSR => {
+                                let next = tokens.next().unwrap();
+
+                                if next.r#type == TokenType::NUMBER {
+                                    instruction |= next.val.parse::<u32>().unwrap();
+                                }
+                            },
                             Opcode::CMP => {
+                                let mut flag = 0;
+
                                 match token.val.as_str() {
-                                    "CEQ" => {},
-                                    "CEL" => {},
-                                    "CEG" => {},
-                                    "CLT" => {},
-                                    "CGT" => {},
+                                    "CEQ" => flag = 0b001,
+                                    "CEL" => flag = 0b010,
+                                    "CEG" => flag = 0b011,
+                                    "CLT" => flag = 0b100,
+                                    "CGT" => flag = 0b101,
                                     _ => {}
                                 }
+
+                                instruction |= flag << 21;
+
+                                let cmp1 = tokens.next().unwrap();
+                                let cmp2 = tokens.next().unwrap();
+
+                                instruction |= cmp1.val.parse::<u32>().unwrap() << 12;
+                                instruction |= cmp2.val.parse::<u32>().unwrap();
                             },
                             Opcode::CMZ => {
                                 match token.val.as_str() {
@@ -299,21 +324,82 @@ impl<'a> Assembler<'a> {
 
                                 if next.r#type == TokenType::NUMBER {
                                     instruction |= next.val.parse::<u32>().unwrap();
+                                } else if next.r#type == TokenType::WORD {
+                                    if !labels.contains_key(&next.val) {
+                                        labels.insert(next.val.to_owned(), Vec::new());
+                                    }
+
+                                    labels.get_mut(&next.val).unwrap().push(self.addr);
                                 }
-                            }
+                            },
+                            Opcode::ADD | Opcode::SUB | Opcode::MUL |
+                            Opcode::DIV | Opcode::AND => {
+                                let dst = tokens.next().unwrap().val.parse::<u32>().unwrap();
+                                let rega = tokens.next().unwrap().val.parse::<u32>().unwrap();
+                                let regb = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                instruction |= dst << 16;
+                                instruction |= rega << 8;
+                                instruction |= regb;
+                            },
+                            Opcode::NOT => {
+                                let dst = tokens.next().unwrap().val.parse::<u32>().unwrap();
+                                let rega = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                instruction |= dst << 16;
+                                instruction |= rega;
+                            },
+                            Opcode::CAL => {
+                                let vec = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                instruction |= vec;
+                            },
+                            Opcode::JPA => {
+                                let addr = tokens.next().unwrap().val.parse::<u32>().unwrap();
+
+                                instruction |= addr;
+                            },
+                            Opcode::FLX => {},
+                            Opcode::ILX => {}
                             _ => {}
                         }
-                        println!("{}", format!("{:#010X}", instruction));
+
+                        if !&buf.contains_key(&self.addr) {
+                            &buf.insert(self.addr, instruction);
+                        }
+
+                        self.addr += 1;
                     } else if match_call(&token.val) != Call::INVALID {
                         let mut instruction: u32 = (Opcode::CAL as u32) << 24;
                         instruction |= match_call(&token.val) as u32;
 
-                        println!("{}", format!("{:#010X}", instruction));
+                        if !&buf.contains_key(&self.addr) {
+                            &buf.insert(self.addr, instruction);
+                        }
+
+                        self.addr += 1;
+                    } else {
+                        for item in &labels {
+                            let label = item.0;
+
+                            if label == &token.val {
+                                let addrs = item.1;
+
+                                for addr in addrs {
+                                    let mut instruction = buf.get(addr).unwrap().to_owned();
+                                    instruction |= self.addr;
+                                    buf.remove(addr);
+                                    buf.insert(*addr, instruction);
+                                }
+                            }
+                        }
                     }
                 }
                 _ => {}
             }
         }
+
+        buf
     }
 }
 
@@ -350,12 +436,41 @@ fn match_call(token: &str) -> Call {
     }
 }
 
-fn main() {
-    let asm = "#LFH 0x002929\nMRX R28\nARG 0x002933\nMOV R00 R28\nMEX\nARG 0x002938\nARG 0x002939\nMMX R01\nARG 0x002939\nPNT\nHLT\nSTR #STR \"hello worljjd\n\"\n";
+fn main() -> std::io::Result<()> {
+    let asm = "#LFH 0x002929\nMRX R28\nARG STR\nMOV R00 R28\nMEX\nARG 0x002938\nARG 0x002939\nMMX R01\nARG 0x002939\nPNT\nHLT\nSTR #STR \"hello worljjd\n\"\n";
 
     let mut tokenizer = Tokenizer::new(&asm);
     tokenizer.tokenize();
+
     let tokens = tokenizer.tokens.borrow();
     let mut assembler = Assembler::new(&tokens);
-    assembler.assemble();
+    let buf = assembler.assemble();
+
+    let mut addresses: Vec<&u32> = buf.keys().collect();
+    let mut instructions: Vec<u32> = Vec::with_capacity(addresses.len());
+    addresses.sort();
+    
+    for addr in &addresses {
+        instructions.push(buf.get(addr).unwrap().to_owned());
+    }
+
+    let instructions: &[u32] = &*instructions;
+
+    let instructions: &[u8] = unsafe {
+        slice::from_raw_parts(instructions.as_ptr() as *const u8, instructions.len() * mem::size_of::<u32>())
+    };
+
+    let mut bin = File::create("out.bin")?;
+
+    // LFH
+    let lfh: [u8; 3] = [
+        (*addresses[0] >> 16) as u8 & 0xFF,
+        (*addresses[0] >> 8) as u8 & 0xFF,
+        (*addresses[0] & 0xFF) as u8
+    ];
+
+    bin.write_all(&lfh)?;
+    bin.write_all(&instructions)?;
+
+    Ok(())
 }
