@@ -1,9 +1,0 @@
-[package]
-name = "basm"
-version = "0.1.0"
-authors = ["Brandon Nguyen"]
-edition = "2018"
-
-[dependencies]
-bvm = {path = "../bvm"}
-byteorder = "1.3.4"
