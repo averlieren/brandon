@@ -1,13 +1,13 @@
 extern crate bvm;
+extern crate byteorder;
 
-use std::u32;
+use std::{u32, str, fs, env};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
-use std::slice;
-use std::mem;
 use bvm::instructions::{Call, Opcode};
+use byteorder::{WriteBytesExt, BigEndian};
 
 struct Token {
     r#type: TokenType,
@@ -152,7 +152,7 @@ impl<'a> Tokenizer<'a> {
                         }
                     );
                 },
-                " " | "\n" | "\t" => {},
+                " " | "\n" | "\t" | "\r" => {},
                 _ => {
                     let mut word = String:: new();
 
@@ -198,7 +198,7 @@ impl<'a> Assembler<'a> {
         loop {
             let token = tokens.next();
 
-            if token.is_none() {    
+            if token.is_none() {
                 break;
             }
 
@@ -211,7 +211,7 @@ impl<'a> Assembler<'a> {
                             self.addr = tokens.next().unwrap().val.parse::<u32>().unwrap();
                         },
                         "STR" => {
-                            let string = &tokens.next().unwrap().val;
+                            let string: &str = &tokens.next().unwrap().val;
                             let string: Vec<u16> = string.encode_utf16().collect();
 
                             for i in (0..string.len()).step_by(2) {
@@ -437,8 +437,8 @@ fn match_call(token: &str) -> Call {
 }
 
 fn main() -> std::io::Result<()> {
-    let asm = "#LFH 0x002929\nMRX R28\nARG STR\nMOV R00 R28\nMEX\nARG 0x002938\nARG 0x002939\nMMX R01\nARG 0x002939\nPNT\nHLT\nSTR #STR \"hello worljjd\n\"\n";
-
+    let args: Vec<String> = env::args().collect();
+    let asm: &str = &fs::read_to_string(&args[1])?;
     let mut tokenizer = Tokenizer::new(&asm);
     tokenizer.tokenize();
 
@@ -455,12 +455,13 @@ fn main() -> std::io::Result<()> {
     }
 
     let instructions: &[u32] = &*instructions;
+    let mut buf: Vec<u8> = Vec::new();
 
-    let instructions: &[u8] = unsafe {
-        slice::from_raw_parts(instructions.as_ptr() as *const u8, instructions.len() * mem::size_of::<u32>())
-    };
+    for &n in instructions {
+        let _ = buf.write_u32::<BigEndian>(n);
+    }
 
-    let mut bin = File::create("out.bin")?;
+    let mut bin = File::create(&args[2])?;
 
     // LFH
     let lfh: [u8; 3] = [
@@ -470,7 +471,7 @@ fn main() -> std::io::Result<()> {
     ];
 
     bin.write_all(&lfh)?;
-    bin.write_all(&instructions)?;
+    bin.write_all(&buf)?;
 
     Ok(())
 }
