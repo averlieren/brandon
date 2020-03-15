@@ -53,6 +53,26 @@ impl Memory {
 
         buf
     }
+
+    pub fn read_utf16(&self, start: u32) -> String {
+        // Reads a UTF-16 BE string from memory, terminates at null byte.
+        let bytes = self.read_bytes(start);
+        let mut chars: Vec<u16> = Vec::with_capacity(bytes.len() / 2);
+        // It is OK to use half the length of bytes, because read_bytes
+        // always emits bytes in multiples of 8.
+
+        for i in (0..bytes.len()).step_by(2) {
+            let word = ((bytes[i] as u16) << 8) | bytes[i + 1] as u16;
+
+            if word == 0 { // Strings are terminated by null byte
+                break;
+            }
+
+            chars.push(word);
+        }
+
+        String::from_utf16(&chars).unwrap()
+    }
 }
 
 #[test]
@@ -65,4 +85,16 @@ fn test_read_bytes() {
     mem.write(2, 0x0072006C00640000);
 
     assert_eq!(correct, mem.read_bytes(0));
+}
+
+#[test]
+fn test_read_utf16() {
+    let mem = Memory::new();
+    let correct: String = "hello world".to_owned();
+
+    mem.write(0, 0x00680065006C006C);
+    mem.write(1, 0x006F00200077006F);
+    mem.write(2, 0x0072006C00640000);
+
+    assert_eq!(correct, mem.read_utf16(0));
 }
