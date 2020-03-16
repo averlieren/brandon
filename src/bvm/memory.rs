@@ -28,6 +28,26 @@ impl Memory {
         }
     }
 
+    pub fn write_bytes(&self, start: u32, bytes: &Vec<u8>) {
+        // Writes bytes into memory
+        let mut addr: u32 = start;
+        
+        for i in (0..bytes.len()).step_by(8) {
+            let mut data: u64 = 0;
+
+            for j in 0..8 {
+                if i + j < bytes.len() {
+                    data |= (bytes[i + j] as u64) << (56 - 8 * j);
+                } else {
+                    break;
+                }
+            }
+
+            self.write(addr, data);
+            addr += 1;
+        }
+    }
+
     pub fn read_bytes(&self, start: u32) -> Vec<u8> {
         // Reads bytes into buffer until empty address.
         let mut addr: u32 = start;
@@ -76,6 +96,15 @@ impl Memory {
 }
 
 #[test]
+fn test_read() {
+    let mem = Memory::new();
+    mem.write(2929, 2929);
+
+    assert_eq!(mem.read(29), 0);
+    assert_eq!(mem.read(2929), 2929);
+}
+
+#[test]
 fn test_read_bytes() {
     let mem = Memory::new();
     let correct: Vec<u8> = vec![0, 104, 0, 101, 0, 108, 0, 108, 0, 111, 0, 32, 0, 119, 0, 111, 0, 114, 0, 108, 0, 100, 0, 0];
@@ -85,6 +114,21 @@ fn test_read_bytes() {
     mem.write(2, 0x0072006C00640000);
 
     assert_eq!(correct, mem.read_bytes(0));
+}
+
+#[test]
+fn test_write_bytes() {
+    let mem = Memory::new();
+    let data: Vec<u8> = vec![0, 104, 0, 101, 0, 108, 0, 108, 0, 111, 0, 32, 0, 119, 0, 111, 0, 114, 0, 108, 0, 100, 0, 0];
+
+    mem.write_bytes(3, &data);
+
+    assert_eq!(mem.read(0), 0);
+    assert_eq!(mem.read(1), 0);
+    assert_eq!(mem.read(2), 0);
+    assert_eq!(mem.read(3), 0x00680065006C006C);
+    assert_eq!(mem.read(4), 0x006F00200077006F);
+    assert_eq!(mem.read(5), 0x0072006C00640000);
 }
 
 #[test]
