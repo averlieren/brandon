@@ -1,6 +1,9 @@
+extern crate byteorder;
+
 use std::cell::RefCell;
 use std::mem::transmute;
 use std::collections::HashMap;
+use byteorder::{WriteBytesExt, BigEndian};
 
 pub struct Memory(RefCell<HashMap<u32, u64>>);
 
@@ -93,6 +96,18 @@ impl Memory {
 
         String::from_utf16(&chars).unwrap()
     }
+
+    pub fn write_utf16(&self, start: u32, string: String) {
+        // Writes a UTF-16 BE string into memory.
+        let chars: Vec<u16> = string.encode_utf16().collect();
+        let mut bytes: Vec<u8> = Vec::with_capacity(chars.len() * 2);
+
+        for chr in chars {
+           let _ = bytes.write_u16::<BigEndian>(chr);
+        }
+
+        self.write_bytes(start, &bytes);
+    }
 }
 
 #[test]
@@ -141,4 +156,15 @@ fn test_read_utf16() {
     mem.write(2, 0x0072006C00640000);
 
     assert_eq!(correct, mem.read_utf16(0));
+}
+
+#[test]
+fn test_write_utf16() {
+    let mem = Memory::new();
+
+    mem.write_utf16(0, "hello world".to_owned());
+
+    let read = mem.read_utf16(0);
+
+    assert_eq!(read, "hello world".to_owned());
 }
