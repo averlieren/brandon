@@ -1,9 +1,10 @@
 extern crate byteorder;
+#[path = "externals.rs"] pub mod externals;
 
 use std::cell::RefCell;
-use std::mem::transmute;
 use std::collections::HashMap;
 use byteorder::{WriteBytesExt, BigEndian};
+use self::externals::u64_to_u8arr;
 
 pub struct Memory(RefCell<HashMap<u32, u64>>);
 
@@ -57,20 +58,15 @@ impl Memory {
         let mut buf: Vec<u8> = Vec::with_capacity(64);
 
         loop {
+            // Read u64 from address
             let data: u64 =  self.read(addr);
 
+            // If the address is empty, break.
             if data == 0 {
                 break;
             }
 
-            let bytes: [u8; 8] = unsafe {
-                transmute(data.to_be())
-            };
-
-            for byte in &bytes {
-                buf.push(*byte);
-            }
-
+            buf.extend_from_slice(&u64_to_u8arr(data));
             addr += 1;
         }
 

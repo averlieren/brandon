@@ -19,3 +19,26 @@ pub fn read(path: &str) -> Vec<u8>{
             &format!("Cannot open {}", path)
         )
 }
+
+pub fn u64_to_u8arr(int: u64) -> [u8; 8] {
+    [
+        (int >> 56 & 0xFF) as u8,
+        (int >> 48 & 0xFF) as u8,
+        (int >> 40 & 0xFF) as u8,
+        (int >> 32 & 0xFF) as u8,
+        (int >> 24 & 0xFF) as u8,
+        (int >> 16 & 0xFF) as u8,
+        (int >> 08 & 0xFF) as u8,
+        (int       & 0xFF) as u8
+    ]
+}
+
+#[test]
+fn test_u64_to_u8arr() {
+    let num: u64 = 0xF0E1D2C3B4A59687;
+    let expected: [u8; 8] = [
+        0xF0, 0xE1, 0xD2, 0xC3, 0xB4, 0xA5, 0x96, 0x87
+    ];
+
+    assert_eq!(u64_to_u8arr(num), expected);
+}
