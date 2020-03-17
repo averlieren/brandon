@@ -124,6 +124,15 @@ impl Memory {
 }
 
 #[test]
+fn test_exists() {
+    let mem = Memory::new();
+    assert!(!mem.exists(&0x2929));
+
+    mem.0.borrow_mut().insert(0x2929, 1);
+    assert!(mem.exists(&0x2929));
+}
+
+#[test]
 fn test_read() {
     let mem = Memory::new();
     mem.write(2929, 2929);
@@ -131,6 +140,10 @@ fn test_read() {
     assert_eq!(mem.read(29), None);
     assert_ne!(mem.read(2929), None);
     assert_eq!(mem.read(2929).unwrap(), 2929);
+
+    mem.write(2929, 2930);
+
+    assert_eq!(mem.read(2929).unwrap(), 2930);
 }
 
 #[test]
