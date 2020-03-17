@@ -1,5 +1,5 @@
 extern crate byteorder;
-#[path = "externals.rs"] pub mod externals;
+#[path = "externals.rs"] mod externals;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -16,19 +16,31 @@ impl Memory {
         )
     }
 
-    pub fn exists(&self, addr: u32) -> bool {
-        self.0.borrow().contains_key(&addr)
+    pub fn exists(&self, addr: &u32) -> bool {
+        // Check to see if there exists data at this address
+        self.0.borrow().contains_key(addr)
     }
 
     pub fn write(&self, addr: u32, content: u64) {
-        *self.0.borrow_mut().entry(addr).or_insert(0) = content;
+        // Write u64 content to this address
+        &self.0.borrow_mut().insert(addr, content);
     }
 
-    pub fn read(&self, addr: u32) -> u64 {
-        if self.exists(addr) {
-            self.0.borrow()[&addr]
+    pub fn read(&self, addr: u32) -> Option<u64> {
+        // Read data at this address
+        if self.exists(&addr) {
+            // If it exists then return the value stored at address
+            Some(self.0.borrow()[&addr])
         } else {
-            0
+            // Return none if not exists
+            None
+        }
+    }
+
+    pub fn delete(&self, addr: &u32) {
+        // Deletes data at address
+        if self.exists(&addr) {
+            self.0.borrow_mut().remove_entry(addr);
         }
     }
 
@@ -53,21 +65,26 @@ impl Memory {
     }
 
     pub fn read_bytes(&self, start: u32) -> Vec<u8> {
-        // Reads bytes into buffer until empty address.
+        // Reads bytes into buffer until non existant or zero valued address.
         let mut addr: u32 = start;
         let mut buf: Vec<u8> = Vec::with_capacity(64);
 
         loop {
             // Read u64 from address
-            let data: u64 =  self.read(addr);
+            let data: Option<u64> =  self.read(addr);
+            match data {
+                Some(_) => {
+                    let data: u64 = data.unwrap();
 
-            // If the address is empty, break.
-            if data == 0 {
-                break;
+                    if data == 0 {
+                        break;
+                    }
+
+                    buf.extend_from_slice(&u64_to_u8arr(data));
+                    addr += 1;
+                },
+                None => break
             }
-
-            buf.extend_from_slice(&u64_to_u8arr(data));
-            addr += 1;
         }
 
         buf
@@ -111,8 +128,21 @@ fn test_read() {
     let mem = Memory::new();
     mem.write(2929, 2929);
 
-    assert_eq!(mem.read(29), 0);
-    assert_eq!(mem.read(2929), 2929);
+    assert_eq!(mem.read(29), None);
+    assert_ne!(mem.read(2929), None);
+    assert_eq!(mem.read(2929).unwrap(), 2929);
+}
+
+#[test]
+fn test_delete() {
+    let mem = Memory::new();
+    mem.write(2929, 2929);
+
+    assert_eq!(mem.read(2929).unwrap(), 2929);
+
+    mem.delete(&2929);
+
+    assert_eq!(mem.read(2929), None);
 }
 
 #[test]
@@ -134,12 +164,12 @@ fn test_write_bytes() {
 
     mem.write_bytes(3, &data);
 
-    assert_eq!(mem.read(0), 0);
-    assert_eq!(mem.read(1), 0);
-    assert_eq!(mem.read(2), 0);
-    assert_eq!(mem.read(3), 0x00680065006C006C);
-    assert_eq!(mem.read(4), 0x006F00200077006F);
-    assert_eq!(mem.read(5), 0x0072006C00640000);
+    assert_eq!(mem.read(0), None);
+    assert_eq!(mem.read(1), None);
+    assert_eq!(mem.read(2), None);
+    assert_eq!(mem.read(3).unwrap(), 0x00680065006C006C);
+    assert_eq!(mem.read(4).unwrap(), 0x006F00200077006F);
+    assert_eq!(mem.read(5).unwrap(), 0x0072006C00640000);
 }
 
 #[test]
