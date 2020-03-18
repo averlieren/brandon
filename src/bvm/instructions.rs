@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fmt;
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, FromPrimitive)]
@@ -57,4 +58,28 @@ impl Instruction {
             bytes: RefCell::new(bytes)
         }
     }
+}
+
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut space = "";
+
+        for byte in self.bytes.borrow().iter() {
+            f.write_str(space)?;
+            f.write_str(&format!("{:02X}", byte))?;
+            space = " ";
+        }
+
+        Ok(())
+    }
+}
+
+#[test]
+fn test_instruction_tostring() {
+    let instruction = Instruction::with_data(
+        Opcode::MOV_REG_REG,
+        vec![0, 0x68, 0x69, 0x21]
+    );
+
+    assert_eq!(instruction.to_string(), "00 68 69 21")
 }
