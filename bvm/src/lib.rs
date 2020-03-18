@@ -3,3 +3,4 @@ extern crate num;
 
 pub mod vm;
 pub mod instructions;
+pub mod externals;

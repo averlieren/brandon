@@ -173,7 +173,7 @@ impl VM {
 
         if inst.get_op() != Some(Opcode::ARG) {
             panic!(
-                "At {}, expected ARG isntruction, got {} instead.",
+                "At {}, expected ARG instruction, got {} instead.",
                 self.get_addr_hex(),
                 inst.get_opcode()
             )
