@@ -102,10 +102,6 @@ impl Memory {
                 Some(_) => {
                     let data: u64 = data.unwrap();
 
-                    if data == 0 {
-                        break;
-                    }
-
                     let bytes = u64_to_u8arr(data);
 
                     for byte in &bytes {
@@ -214,6 +210,7 @@ fn test_read_bytes() {
     mem.write(1, 0x006F00200077006F);
     mem.write(2, 0x0072006C00640000);
 
+    assert_eq!(vec![0, 0x68, 0], mem.read_bytes(0, 3));
     assert_eq!(correct, mem.read_bytes(1, 9));
 }
 
