@@ -7,7 +7,7 @@ const MEM: u8 = size_of::<u32>() as u8;
 const OPCODE: u8 = 1;
 
 #[allow(non_camel_case_types)]
-#[derive(PartialEq, FromPrimitive)]
+#[derive(PartialEq, FromPrimitive, Copy, Clone)]
 pub enum Opcode {
     MOV_REG_REG = 0,
     MOV_REG_MEM,
@@ -80,12 +80,12 @@ impl Instruction {
         match opcode {
             Opcode::MOV_REG_REG => OPCODE + REG + REG,
             Opcode::MOV_REG_MEM | Opcode::MOV_MEM_REG => OPCODE + REG + MEM,
-            Opcode::MOV_MEM_MEM => OPCODE + MEM + MEM,
-            Opcode::MOV_REG_IMM => OPCODE + REG + byte >> 4,
-            Opcode::MOV_MEM_IMM => OPCODE + MEM + byte >> 4,
-            Opcode::JMP_IMM => OPCODE + byte >> 4,
+            Opcode::MOV_REG_IMM => OPCODE + REG + (byte >> 4),
+            Opcode::MOV_MEM_MEM | // Memory addresses dont always take up 32bits
+            Opcode::MOV_MEM_IMM => OPCODE + (byte >> 4) + (byte & 0xF),
+            Opcode::JMP_IMM => OPCODE + (byte >> 4),
             Opcode::JMP_REG => OPCODE + REG,
-            Opcode::JSR => OPCODE + MEM,
+            Opcode::JSR => OPCODE + (byte >> 4),
             Opcode::CMP_EQ_REG_REG |
             Opcode::CMP_LE_REG_REG |
             Opcode::CMP_GE_REG_REG |
@@ -95,8 +95,33 @@ impl Instruction {
             Opcode::CMP_LE_REG_IMM |
             Opcode::CMP_GE_REG_IMM |
             Opcode::CMP_LT_REG_IMM |
-            Opcode::CMP_GT_REG_IMM => OPCODE + REG + byte >> 4,
-            _ => {0}
+            Opcode::CMP_GT_REG_IMM => OPCODE + REG + (byte >> 4),
+            Opcode::AND |
+            Opcode::ADD |
+            Opcode::SUB |
+            Opcode::MUL |
+            Opcode::DIV |
+            Opcode::FADD |
+            Opcode::FSUB |
+            Opcode::FMUL |
+            Opcode::FDIV => {
+                match byte >> 6 {
+                    0b00 => OPCODE + REG + REG + REG,
+                    0b01 => OPCODE + REG + REG + (byte & 0xF),
+                    0b10 => OPCODE + REG + 2 * (byte & 0xF),
+                    _ => panic!("Unexpected option passed")
+                }
+            },
+            Opcode::NOT => {
+                match byte >> 6 {
+                    0b00 => OPCODE + REG + REG,
+                    0b01 => OPCODE + REG + (byte & 0xF),
+                    _ => panic!("Unexpecte option passed")
+                }
+            },
+            Opcode::CAL => OPCODE + 1,
+            Opcode::FILE_LOAD => OPCODE + byte,
+            _ => OPCODE
         }
     }
 }
@@ -123,6 +148,88 @@ fn test_instruction_tostring() {
     );
 
     assert_eq!(instruction.to_string(), "00 68 69 21")
+}
+
+#[test]
+fn test_instruction_get_size() {
+    let opcodes: [Opcode; 16] = [
+        Opcode::MOV_REG_REG,
+        Opcode::MOV_REG_MEM,
+        Opcode::MOV_REG_IMM,
+        Opcode::MOV_MEM_MEM,
+        Opcode::JMP_IMM,
+        Opcode::JMP_REG,
+        Opcode::JSR,
+        Opcode::CMP_EQ_REG_REG,
+        Opcode::CMP_EQ_REG_IMM,
+        Opcode::ADD,
+        Opcode::ADD,
+        Opcode::ADD,
+        Opcode::NOT,
+        Opcode::NOT,
+        Opcode::CAL,
+        Opcode::FILE_LOAD
+    ];
+
+    let bytes: [u8; 16] = [
+        0, // Values with 0 are not expecting a byte
+        0,
+        0b01000000, // MOV_REG_IMM, byte encodes how large IMM is
+        0b00110100, // MOV_MEM_MEM, byte encodes how large mem addrs are
+        0b00110000, // JMP_IMM, byte encodes how large IMM is
+        0,
+        0b01000000, // JSR, byte encodes how large mem addr is
+        0,
+        0b00110000, // CMP_*_REG_IMM, byte encodes how large IMM is
+
+        // ADD, byte encodes option (2 most significant bits)
+        // and then the size of IMM if applicable
+        0b00_000000,
+        0b01_00_0100,
+        0b10_00_0011,
+        // NOT, encodes options (2 most signficant bits),
+        // and then the size of IMM if applicable
+        0b00_000000,
+        0b01_000011,
+        0,
+        0b00000100 // FILE_LOAD, byte encodes mem addr
+    ];
+
+    let expected: [u8; 16] = [
+        OPCODE + REG + REG, // 3
+        OPCODE + REG + MEM, // 6
+        OPCODE + REG + 4, // 6
+        OPCODE + 3 + 4, // 8
+        OPCODE + 3, // 4
+        OPCODE + REG, // 2
+        OPCODE + 4, // 5
+        OPCODE + REG + REG, // 3
+        OPCODE + REG + 3, // 5
+        OPCODE + REG + REG + REG, // 4
+        OPCODE + REG + REG + 4, // 7
+        OPCODE + REG + 2 * (3), // 8
+        OPCODE + REG + REG, // 3
+        OPCODE + REG + 3, // 5
+        OPCODE + 1, // 2
+        OPCODE + 4 // 5
+    ];
+
+    assert_eq!(Instruction::get_size(opcodes[0], bytes[0]), expected[0]);
+    assert_eq!(Instruction::get_size(opcodes[1], bytes[1]), expected[1]);
+    assert_eq!(Instruction::get_size(opcodes[2], bytes[2]), expected[2]);
+    assert_eq!(Instruction::get_size(opcodes[3], bytes[3]), expected[3]);
+    assert_eq!(Instruction::get_size(opcodes[4], bytes[4]), expected[4]);
+    assert_eq!(Instruction::get_size(opcodes[5], bytes[5]), expected[5]);
+    assert_eq!(Instruction::get_size(opcodes[6], bytes[6]), expected[6]);
+    assert_eq!(Instruction::get_size(opcodes[7], bytes[7]), expected[7]);
+    assert_eq!(Instruction::get_size(opcodes[8], bytes[8]), expected[8]);
+    assert_eq!(Instruction::get_size(opcodes[9], bytes[9]), expected[9]);
+    assert_eq!(Instruction::get_size(opcodes[10], bytes[10]), expected[10]);
+    assert_eq!(Instruction::get_size(opcodes[11], bytes[11]), expected[11]);
+    assert_eq!(Instruction::get_size(opcodes[12], bytes[12]), expected[12]);
+    assert_eq!(Instruction::get_size(opcodes[13], bytes[13]), expected[13]);
+    assert_eq!(Instruction::get_size(opcodes[14], bytes[14]), expected[14]);
+    assert_eq!(Instruction::get_size(opcodes[15], bytes[15]), expected[15]);
 }
 
 #[test]
