@@ -39,6 +39,13 @@ pub enum Opcode {
     INVALID
 }
 
+impl Opcode {
+    pub fn from_u8(num: u8) -> Option<Opcode> {
+        // Convert u8 int to corresponding enum constant
+        num::FromPrimitive::from_u8(num)
+    }
+}
+
 pub struct Instruction {
     opcode: Opcode,
     bytes: RefCell<Vec<u8>>
@@ -46,6 +53,7 @@ pub struct Instruction {
 
 impl Instruction {
     pub fn new() -> Instruction {
+        // Create arbitrary new instruction
         Instruction {
             opcode: Opcode::INVALID,
             bytes: RefCell::new(Vec::with_capacity(0))
@@ -53,6 +61,7 @@ impl Instruction {
     }
 
     pub fn with_data(opcode: Opcode, bytes: Vec<u8>) -> Instruction {
+        // Create instruction with data
         Instruction {
             opcode: opcode,
             bytes: RefCell::new(bytes)
@@ -82,4 +91,13 @@ fn test_instruction_tostring() {
     );
 
     assert_eq!(instruction.to_string(), "00 68 69 21")
+}
+
+#[test]
+fn test_opcode_from_u8() {
+    let valid_opcode = Opcode::from_u8(0);
+    let invalid_opcode = Opcode::from_u8(123);
+
+    assert!(valid_opcode.unwrap() == Opcode::MOV_REG_REG);
+    assert!(invalid_opcode == None);
 }
