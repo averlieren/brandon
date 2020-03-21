@@ -44,7 +44,7 @@ impl Memory {
         }
     }
 
-    pub fn write_bytes(&self, start: u32, bytes: &Vec<u8>) {
+    pub fn write_bytes(&self, start: u32, bytes: &[u8]) {
         // Writes bytes into memory
         let mut addr: u32 = start;
         
@@ -64,7 +64,7 @@ impl Memory {
         }
     }
 
-    pub fn read_bytes(&self, start: u32) -> Vec<u8> {
+    pub fn read_bytes_eom(&self, start: u32) -> Vec<u8> {
         // Reads bytes into buffer until non existant or zero valued address.
         let mut addr: u32 = start;
         let mut buf: Vec<u8> = Vec::with_capacity(64);
@@ -90,9 +90,44 @@ impl Memory {
         buf
     }
 
+    pub fn read_bytes(&self, start: u32, len: u32) -> Vec<u8> {
+        // Reads len number of bytes into buffer.
+        let mut addr: u32 = start;
+        let mut buf: Vec<u8> = Vec::with_capacity(len as usize);
+
+        'memory: loop {
+            // Read u64 from address
+            let data: Option<u64> =  self.read(addr);
+            match data {
+                Some(_) => {
+                    let data: u64 = data.unwrap();
+
+                    if data == 0 {
+                        break;
+                    }
+
+                    let bytes = u64_to_u8arr(data);
+
+                    for byte in &bytes {
+                        buf.push(*byte);
+
+                        if buf.len() == len as usize {
+                            break 'memory;
+                        }
+                    }
+
+                    addr += 1;
+                },
+                None => break 'memory
+            }
+        }
+
+        buf
+    }
+
     pub fn read_utf16(&self, start: u32) -> String {
         // Reads a UTF-16 BE string from memory, terminates at null byte.
-        let bytes = self.read_bytes(start);
+        let bytes = self.read_bytes_eom(start);
         let mut chars: Vec<u16> = Vec::with_capacity(bytes.len() / 2);
         // It is OK to use half the length of bytes, because read_bytes
         // always emits bytes in multiples of 8.
@@ -159,7 +194,7 @@ fn test_delete() {
 }
 
 #[test]
-fn test_read_bytes() {
+fn test_read_bytes_eom() {
     let mem = Memory::new();
     let correct: Vec<u8> = vec![0, 104, 0, 101, 0, 108, 0, 108, 0, 111, 0, 32, 0, 119, 0, 111, 0, 114, 0, 108, 0, 100, 0, 0];
 
@@ -167,7 +202,19 @@ fn test_read_bytes() {
     mem.write(1, 0x006F00200077006F);
     mem.write(2, 0x0072006C00640000);
 
-    assert_eq!(correct, mem.read_bytes(0));
+    assert_eq!(correct, mem.read_bytes_eom(0));
+}
+
+#[test]
+fn test_read_bytes() {
+    let mem = Memory::new();
+    let correct: Vec<u8> = vec![0, 111, 0, 32, 0, 119, 0, 111, 0];
+
+    mem.write(0, 0x00680065006C006C);
+    mem.write(1, 0x006F00200077006F);
+    mem.write(2, 0x0072006C00640000);
+
+    assert_eq!(correct, mem.read_bytes(1, 9));
 }
 
 #[test]
