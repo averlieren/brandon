@@ -1,5 +1,10 @@
 use std::cell::RefCell;
 use std::fmt;
+use std::mem::size_of;
+
+const REG: u8 = size_of::<u8>() as u8;
+const MEM: u8 = size_of::<u32>() as u8;
+const OPCODE: u8 = 1;
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, FromPrimitive)]
@@ -65,6 +70,33 @@ impl Instruction {
         Instruction {
             opcode: opcode,
             bytes: RefCell::new(bytes)
+        }
+    }
+
+    pub fn get_size(opcode: Opcode, byte: u8) -> u8 {
+        // Get the size of an instruction in bytes
+        // Ask for opcode and following byte, as some instructions
+        // may have flags set in the next byte
+        match opcode {
+            Opcode::MOV_REG_REG => OPCODE + REG + REG,
+            Opcode::MOV_REG_MEM | Opcode::MOV_MEM_REG => OPCODE + REG + MEM,
+            Opcode::MOV_MEM_MEM => OPCODE + MEM + MEM,
+            Opcode::MOV_REG_IMM => OPCODE + REG + byte >> 4,
+            Opcode::MOV_MEM_IMM => OPCODE + MEM + byte >> 4,
+            Opcode::JMP_IMM => OPCODE + byte >> 4,
+            Opcode::JMP_REG => OPCODE + REG,
+            Opcode::JSR => OPCODE + MEM,
+            Opcode::CMP_EQ_REG_REG |
+            Opcode::CMP_LE_REG_REG |
+            Opcode::CMP_GE_REG_REG |
+            Opcode::CMP_LT_REG_REG |
+            Opcode::CMP_GT_REG_REG => OPCODE + REG + REG,
+            Opcode::CMP_EQ_REG_IMM |
+            Opcode::CMP_LE_REG_IMM |
+            Opcode::CMP_GE_REG_IMM |
+            Opcode::CMP_LT_REG_IMM |
+            Opcode::CMP_GT_REG_IMM => OPCODE + REG + byte >> 4,
+            _ => {0}
         }
     }
 }
