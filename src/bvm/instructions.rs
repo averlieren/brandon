@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fmt;
 use std::mem::size_of;
 
@@ -51,25 +50,25 @@ impl Opcode {
     }
 }
 
-pub struct Instruction {
+pub struct Instruction<'a> {
     pub opcode: Opcode,
-    pub bytes: RefCell<Vec<u8>>
+    pub bytes: &'a [u8]
 }
 
-impl Instruction {
-    pub fn new() -> Instruction {
+impl<'a> Instruction<'a> {
+    pub fn new() -> Instruction<'a> {
         // Create arbitrary new instruction
         Instruction {
             opcode: Opcode::INVALID,
-            bytes: RefCell::new(Vec::with_capacity(0))
+            bytes: &[]
         }
     }
 
-    pub fn with_data(opcode: Opcode, bytes: Vec<u8>) -> Instruction {
+    pub fn with_data(opcode: Opcode, bytes: &'a [u8]) -> Instruction<'a> {
         // Create instruction with data
         Instruction {
             opcode: opcode,
-            bytes: RefCell::new(bytes)
+            bytes: bytes
         }
     }
 
@@ -127,11 +126,11 @@ impl Instruction {
     }
 }
 
-impl fmt::Display for Instruction {
+impl<'a> fmt::Display for Instruction<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut space = "";
 
-        for byte in self.bytes.borrow().iter() {
+        for byte in self.bytes.iter() {
             f.write_str(space)?;
             f.write_str(&format!("{:02X}", byte))?;
             space = " ";
@@ -145,7 +144,7 @@ impl fmt::Display for Instruction {
 fn test_instruction_tostring() {
     let instruction = Instruction::with_data(
         Opcode::MOV_REG_REG,
-        vec![0, 0x68, 0x69, 0x21]
+        &[0, 0x68, 0x69, 0x21]
     );
 
     assert_eq!(instruction.to_string(), "00 68 69 21")
