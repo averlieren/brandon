@@ -16,12 +16,12 @@ impl Registers {
         self.0.borrow().contains_key(register)
     }
 
-    pub fn get(&self, register: &u8) -> Option<u64> {
-        // Get the value stored in register, if exists
+    pub fn get(&self, register: &u8) -> u64 {
+        // Get the value stored in register
         if self.exists(register) {
-            Some(self.0.borrow()[register])
+            self.0.borrow()[register]
         } else {
-            None
+            0
         }
     }
 
@@ -44,8 +44,8 @@ fn test_exists() {
 fn test_get() {
     let reg = Registers::new();
 
-    assert_eq!(reg.get(&29), None);
+    assert_eq!(reg.get(&29), 0);
 
     reg.0.borrow_mut().insert(29, 29);
-    assert_eq!(reg.get(&29).unwrap(), 29);
+    assert_eq!(reg.get(&29), 29);
 }
