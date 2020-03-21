@@ -52,8 +52,8 @@ impl Opcode {
 }
 
 pub struct Instruction {
-    opcode: Opcode,
-    bytes: RefCell<Vec<u8>>
+    pub opcode: Opcode,
+    pub bytes: RefCell<Vec<u8>>
 }
 
 impl Instruction {
@@ -83,6 +83,7 @@ impl Instruction {
             Opcode::MOV_REG_IMM => OPCODE + REG + (byte >> 4),
             Opcode::MOV_MEM_MEM | // Memory addresses dont always take up 32bits
             Opcode::MOV_MEM_IMM => OPCODE + (byte >> 4) + (byte & 0xF),
+            Opcode::SWP => OPCODE + (byte >> 4) + (byte & 0xF),
             Opcode::JMP_IMM => OPCODE + (byte >> 4),
             Opcode::JMP_REG => OPCODE + REG,
             Opcode::JSR => OPCODE + (byte >> 4),
@@ -152,11 +153,12 @@ fn test_instruction_tostring() {
 
 #[test]
 fn test_instruction_get_size() {
-    let opcodes: [Opcode; 16] = [
+    let opcodes: [Opcode; 17] = [
         Opcode::MOV_REG_REG,
         Opcode::MOV_REG_MEM,
         Opcode::MOV_REG_IMM,
         Opcode::MOV_MEM_MEM,
+        Opcode::SWP,
         Opcode::JMP_IMM,
         Opcode::JMP_REG,
         Opcode::JSR,
@@ -171,11 +173,12 @@ fn test_instruction_get_size() {
         Opcode::FILE_LOAD
     ];
 
-    let bytes: [u8; 16] = [
+    let bytes: [u8; 17] = [
         0, // Values with 0 are not expecting a byte
         0,
         0b01000000, // MOV_REG_IMM, byte encodes how large IMM is
         0b00110100, // MOV_MEM_MEM, byte encodes how large mem addrs are
+        0b00110011, // SWP
         0b00110000, // JMP_IMM, byte encodes how large IMM is
         0,
         0b01000000, // JSR, byte encodes how large mem addr is
@@ -195,11 +198,12 @@ fn test_instruction_get_size() {
         0b00000100 // FILE_LOAD, byte encodes mem addr
     ];
 
-    let expected: [u8; 16] = [
+    let expected: [u8; 17] = [
         OPCODE + REG + REG, // 3
         OPCODE + REG + MEM, // 6
         OPCODE + REG + 4, // 6
         OPCODE + 3 + 4, // 8
+        OPCODE + 6, // 7
         OPCODE + 3, // 4
         OPCODE + REG, // 2
         OPCODE + 4, // 5
