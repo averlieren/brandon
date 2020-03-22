@@ -34,13 +34,16 @@ pub fn u64_to_u8arr(int: u64) -> [u8; 8] {
 }
 
 pub fn u8arr_to_u32(bytes: &[u8]) -> u32 {
+    // Converts a u8 slice (len <= 4) to a u32 int
     let mut num: u32 = 0;
 
     for i in (0..=3).rev() {
         let mut byte: u8 = 0;
-        
-        if i < bytes.len() {
-            byte = bytes[i];
+        let offset = 4 - bytes.len(); // use offset to preserve byte order
+
+        // Offset must <= i so we don't overflow with subtraction
+        if offset <= i && (i - offset) < bytes.len() {
+            byte = bytes[i - offset];
         }
 
         num |= (byte as u32) << 24 - (8 * i);
@@ -55,6 +58,11 @@ fn test_u8arr_to_u32() {
         u8arr_to_u32(&[0, 0, 41, 41]),
         0x2929
     );
+
+    assert_eq!(
+        u8arr_to_u32(&[0x29, 0x29]),
+        0x2929
+    )
 }
 
 #[test]
