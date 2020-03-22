@@ -9,7 +9,7 @@ const OPTION: u8 = 1;
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, FromPrimitive, Copy, Clone)]
 pub enum Opcode {
-    MOV_REG_REG = 0,
+    MOV_REG_REG = 1,
     MOV_REG_MEM,
     MOV_MEM_REG,
     MOV_MEM_MEM,
@@ -85,9 +85,9 @@ impl<'a> Instruction<'a> {
             Opcode::MOV_MEM_MEM | // Memory addresses dont always take up 32bits
             Opcode::MOV_MEM_IMM => OPCODE + OPTION + (byte >> 4) + (byte & 0xF),
             Opcode::SWP => OPCODE + OPTION + (byte >> 4) + (byte & 0xF),
-            Opcode::JMP_IMM => OPCODE + OPTION + (byte >> 4),
+            Opcode::JMP_IMM => OPCODE + OPTION + (byte & 0xF),
             Opcode::JMP_REG => OPCODE + REG,
-            Opcode::JSR => OPCODE + OPTION + (byte >> 4),
+            Opcode::JSR => OPCODE + OPTION + (byte & 0xF),
             Opcode::CMP_EQ_REG_REG |
             Opcode::CMP_LE_REG_REG |
             Opcode::CMP_GE_REG_REG |
@@ -118,7 +118,7 @@ impl<'a> Instruction<'a> {
                 match byte >> 6 {
                     0b00 => OPCODE + OPTION  + REG + REG,
                     0b01 => OPCODE + OPTION  + REG + (byte & 0xF),
-                    _ => panic!("Unexpecte option passed")
+                    _ => panic!("Unexpected option passed")
                 }
             },
             Opcode::CAL => OPCODE + 1,
@@ -239,7 +239,7 @@ fn test_instruction_get_size() {
 
 #[test]
 fn test_opcode_from_u8() {
-    let valid_opcode = Opcode::from_u8(0);
+    let valid_opcode = Opcode::from_u8(1);
     let invalid_opcode = Opcode::from_u8(123);
 
     assert!(valid_opcode.unwrap() == Opcode::MOV_REG_REG);
