@@ -59,9 +59,14 @@ impl VM {
 
                         if op != None {
                             let op = op.unwrap();
-                            let size = Instruction::get_size(op, (i + 1) as u8) as usize;
-                            let bytes = self.mem.read_bytes(self.addr, (i + size) as u32);
-                            let bytes = &bytes[i .. i+size];
+                            let size = Instruction::get_size(op, self.next_byte(i)) as usize;
+                            let rbytes = self.mem.read_bytes(self.addr, (i + size) as u32);
+                            let mut bytes: Vec<u8> = Vec::new();
+                            bytes.extend_from_slice(&rbytes[i..i + size]);
+
+                            if i == 7 {
+                                bytes.extend_from_slice(&[self.next_byte(i)]);
+                            }
 
                             skip_bytes += size - 1;
 
@@ -76,6 +81,25 @@ impl VM {
             }
 
             self.addr += 1;
+        }
+    }
+
+    fn next_byte(&self, i: usize) -> u8 {
+        // Get the next byte in memory starting from byte index i
+        let i = i + 1;
+
+        if i < 7 {
+            let memory = self.mem.read(self.addr);
+
+            u64_to_u8arr(memory.unwrap())[i]
+        } else {
+            let memory = self.mem.read(self.addr + 1);
+
+            if memory != None {
+                (memory.unwrap() >> 56) as u8
+            } else {
+                panic!("Unexpected empty address {:#010X}", self.addr + 1);
+            }
         }
     }
 
@@ -175,8 +199,7 @@ impl VM {
         match jmp.opcode {
             Opcode::JMP_IMM |
             Opcode::JSR => {
-                let d = 2 + (jmp.bytes[1] >> 4) as usize;
-                let addr = u8arr_to_u32(&jmp.bytes[2..d]);
+                let addr = u8arr_to_u32(&jmp.bytes[2..]);
 
                 if jmp.opcode == Opcode::JSR {
                     // Store incremented address in register 255
@@ -184,11 +207,14 @@ impl VM {
                     self.reg.set(255, (self.addr + 1) as u64);
                 }
 
-                self.addr = addr;
+                // Because addr is incremented after execution,
+                // we must subtract.
+                // NOTE: maybe fix this?
+                self.addr = addr - 1;
             },
             Opcode::JMP_REG => {
                 let addr = self.mem.read(jmp.bytes[1] as u32).unwrap() as u32;
-                self.addr = addr;
+                self.addr = addr - 1; // see above as to why we subtract
             },
             _ => panic!("Non jmp instruction found.")
         }
