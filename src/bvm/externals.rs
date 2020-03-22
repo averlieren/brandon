@@ -33,6 +33,30 @@ pub fn u64_to_u8arr(int: u64) -> [u8; 8] {
     ]
 }
 
+pub fn u8arr_to_u32(bytes: &[u8]) -> u32 {
+    let mut num: u32 = 0;
+
+    for i in (0..=3).rev() {
+        let mut byte: u8 = 0;
+        
+        if i < bytes.len() {
+            byte = bytes[i];
+        }
+
+        num |= (byte as u32) << 24 - (8 * i);
+    }
+
+    num
+}
+
+#[test]
+fn test_u8arr_to_u32() {
+    assert_eq!(
+        u8arr_to_u32(&[0, 0, 41, 41]),
+        0x2929
+    );
+}
+
 #[test]
 fn test_u64_to_u8arr() {
     let num: u64 = 0xF0E1D2C3B4A59687;
