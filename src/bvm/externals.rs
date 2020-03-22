@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 extern crate libc;
 
 use std::fs;
@@ -52,6 +53,30 @@ pub fn u8arr_to_u32(bytes: &[u8]) -> u32 {
     num
 }
 
+pub fn u8arr_to_u64(bytes: &[u8]) -> u64 {
+    // Converts a u8 slice (len <= 8) to a u64 int
+    if bytes.len() <= 4 {
+        u8arr_to_u32(bytes) as u64
+    } else {
+        let mut num1: Vec<u8> = Vec::with_capacity(4);
+        let mut num2: Vec<u8> = Vec::with_capacity(4);
+
+        for i in 0..=3 {
+            if i < bytes.len() {
+                num1.push(bytes[i]);
+            }
+        }
+        for i in 4..=7 {
+            if i < bytes.len() {
+                num2.push(bytes[i]);
+            }
+        }
+
+        let shift = 8 * (bytes.len() - 4);
+        (u8arr_to_u32(&num1) as u64) << shift | u8arr_to_u32(&num2) as u64
+    }
+}
+
 #[test]
 fn test_u8arr_to_u32() {
     assert_eq!(
@@ -61,6 +86,29 @@ fn test_u8arr_to_u32() {
 
     assert_eq!(
         u8arr_to_u32(&[0x29, 0x29]),
+        0x2929
+    )
+}
+
+#[test]
+fn test_u8arr_to_u64() {
+    assert_eq!(
+        u8arr_to_u64(&[9, 10, 41, 41, 0, 0, 41, 41]),
+        0x090A292900002929
+    );
+
+    assert_eq!(
+        u8arr_to_u64(&[41, 10, 0, 0, 41, 41]),
+        0x290A00002929
+    );
+
+    assert_eq!(
+        u8arr_to_u64(&[0, 0, 41, 41]),
+        0x2929
+    );
+
+    assert_eq!(
+        u8arr_to_u64(&[0x29, 0x29]),
         0x2929
     )
 }
