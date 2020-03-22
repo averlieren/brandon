@@ -13,7 +13,7 @@ pub mod registers;
 use registers::Registers;
 use memory::Memory;
 use instructions::{Instruction, Opcode};
-use externals::u64_to_u8arr;
+use externals::{u64_to_u8arr, u8arr_to_u32, u8arr_to_u64};
 
 // If there are no instrucions for this long, then halt.
 const TIMEOUT: u32 = 128;
@@ -126,32 +126,97 @@ impl VM {
             },
             Opcode::MOV_REG_MEM => {
                 let dst = mov.bytes[1];
-                let src: u32 =
-                    (mov.bytes[2] as u32) << 24 |
-                    (mov.bytes[3] as u32) << 16 |
-                    (mov.bytes[4] as u32) <<  8 |
-                    mov.bytes[5] as u32;
+                let src = u8arr_to_u32(&mov.bytes[2..=5]);
 
                 if self.mem.exists(&src) {
                     self.reg.set(dst, self.mem.read(src).unwrap());
                 } else {
-                    panic!("Memory address does not exist!");
+                    panic!("Memory address, {:#010X}, does not exist!", src);
                 }
             },
             Opcode::MOV_MEM_REG => {
-                let dst: u32 =
-                    (mov.bytes[1] as u32) << 24 |
-                    (mov.bytes[2] as u32) << 16 |
-                    (mov.bytes[3] as u32) <<  8 |
-                    mov.bytes[4] as u32;
+                let dst = u8arr_to_u32(&mov.bytes[1..=4]);
                 let src = mov.bytes[5];
 
                 self.mem.write(dst, self.reg.get(&src));
             },
-            Opcode::MOV_MEM_MEM => {},
-            Opcode::MOV_REG_IMM => {},
-            Opcode::MOV_MEM_IMM => {},
+            Opcode::MOV_MEM_MEM => {
+                let d = 2 + (mov.bytes[1] >> 4) as usize;
+                let s = d + (mov.bytes[1] & 0xF) as usize;
+                let dst = u8arr_to_u32(&mov.bytes[2..d]);
+                let src = u8arr_to_u32(&mov.bytes[d..s]);
+
+                if self.mem.exists(&src) {
+                    self.mem.write(dst, self.mem.read(src).unwrap());
+                } else {
+                    panic!("Memory address, {:#010X}, does not exist!", src);
+                }
+            },
+            Opcode::MOV_REG_IMM => {
+                let dst = mov.bytes[2];
+                let src = u8arr_to_u64(&mov.bytes[3..]);
+
+                self.reg.set(dst, src);
+            },
+            Opcode::MOV_MEM_IMM => {
+                let d = 2 + (mov.bytes[1] >> 4) as usize;
+                let s = d + (mov.bytes[1] & 0xF) as usize;
+                let dst = u8arr_to_u32(&mov.bytes[2..d]);
+                let src = u8arr_to_u64(&mov.bytes[d..s]);
+
+                self.mem.write(dst, src);
+            },
             _ => panic!("Non mov instruction found.")
         }
     }
+}
+
+#[test]
+fn test_mov() {
+    let vm = VM::new();
+
+    vm.reg.set(29, 12345);
+    vm.execute_mov(
+        Instruction::with_data(
+            Opcode::MOV_REG_REG,
+            &[Opcode::MOV_REG_REG as u8, 4, 29]
+        )
+    );
+    assert_eq!(vm.reg.get(&4), 12345);
+
+    vm.mem.write(0x2929, 54321);
+    vm.execute_mov(
+        Instruction::with_data(
+            Opcode::MOV_REG_MEM,
+            &[Opcode::MOV_REG_MEM as u8, 0, 0, 0, 0x29, 0x29]
+        )
+    );
+    assert_eq!(vm.reg.get(&0), 54321);
+
+    vm.execute_mov(
+        Instruction::with_data(
+            Opcode::MOV_MEM_MEM,
+            &[Opcode::MOV_MEM_MEM as u8, 0b0001_0010, 0x27, 0x29, 0x29]
+        )
+    );
+
+    assert_eq!(vm.mem.read(0x27).unwrap(), 54321);
+
+    vm.execute_mov(
+        Instruction::with_data(
+            Opcode::MOV_REG_IMM,
+            &[Opcode::MOV_REG_IMM as u8, 7, 0x59, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29]
+        )
+    );
+
+    assert_eq!(vm.reg.get(&0x59), 0x23242526272829);
+
+    vm.execute_mov(
+        Instruction::with_data(
+            Opcode::MOV_MEM_IMM,
+            &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x92, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
+        )
+    );
+
+    assert_eq!(vm.mem.read(0x92CA).unwrap(), 0xAABBCCDDEE);
 }

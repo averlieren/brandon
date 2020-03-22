@@ -50,6 +50,7 @@ impl Opcode {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct Instruction<'a> {
     pub opcode: Opcode,
     pub bytes: &'a [u8]
