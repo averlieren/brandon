@@ -79,7 +79,7 @@ impl VM {
         }
     }
 
-    fn execute(&self, inst: Instruction) {
+    fn execute(&mut self, inst: Instruction) {
         match inst.opcode {
             Opcode::MOV_REG_REG |
             Opcode::MOV_REG_MEM |
@@ -90,7 +90,7 @@ impl VM {
             Opcode::SWP => self.execute_mov(inst),
             Opcode::JMP_IMM |
             Opcode::JMP_REG |
-            Opcode::JSR => {},
+            Opcode::JSR => self.execute_jump(inst),
             Opcode::CMP_EQ_REG_REG |
             Opcode::CMP_LE_REG_REG |
             Opcode::CMP_GE_REG_REG |
@@ -108,11 +108,11 @@ impl VM {
             Opcode::MUL |
             Opcode::FMUL |
             Opcode::DIV |
-            Opcode::FDIV |
+            Opcode::FDIV => {},
             Opcode::AND |
-            Opcode::NOT |
-            Opcode::CAL |
-            Opcode::FILE_LOAD => {}
+            Opcode::NOT => {},
+            Opcode::CAL => {},
+            Opcode::FILE_LOAD => {},
             _ => {}
         }
     }
@@ -170,14 +170,38 @@ impl VM {
             _ => panic!("Non mov instruction found.")
         }
     }
+
+    fn execute_jump(&mut self, jmp: Instruction) {
+        match jmp.opcode {
+            Opcode::JMP_IMM |
+            Opcode::JSR => {
+                let d = 2 + (jmp.bytes[1] >> 4) as usize;
+                let addr = u8arr_to_u32(&jmp.bytes[2..d]);
+
+                if jmp.opcode == Opcode::JSR {
+                    // Store incremented address in register 255
+                    // upon RET (JMP R255), jump back to this stored addr.
+                    self.reg.set(255, (self.addr + 1) as u64);
+                }
+
+                self.addr = addr;
+            },
+            Opcode::JMP_REG => {
+                let addr = self.mem.read(jmp.bytes[1] as u32).unwrap() as u32;
+                self.addr = addr;
+            },
+            _ => panic!("Non jmp instruction found.")
+        }
+    }
 }
 
 #[test]
 fn test_mov() {
     let vm = VM::new();
 
-    vm.reg.set(29, 12345);
+    vm.reg.set(29, 12345); // <=> MOV R29 12345
     vm.execute_mov(
+        // MOV R4 R29
         Instruction::with_data(
             Opcode::MOV_REG_REG,
             &[Opcode::MOV_REG_REG as u8, 4, 29]
@@ -185,8 +209,9 @@ fn test_mov() {
     );
     assert_eq!(vm.reg.get(&4), 12345);
 
-    vm.mem.write(0x2929, 54321);
+    vm.mem.write(0x2929, 54321); // <=> MOV [0x2929] 54321
     vm.execute_mov(
+        // MOV R0 [0x2929]
         Instruction::with_data(
             Opcode::MOV_REG_MEM,
             &[Opcode::MOV_REG_MEM as u8, 0, 0, 0, 0x29, 0x29]
@@ -195,6 +220,7 @@ fn test_mov() {
     assert_eq!(vm.reg.get(&0), 54321);
 
     vm.execute_mov(
+        // MOV [0x27] [0x2929]
         Instruction::with_data(
             Opcode::MOV_MEM_MEM,
             &[Opcode::MOV_MEM_MEM as u8, 0b0001_0010, 0x27, 0x29, 0x29]
@@ -204,6 +230,7 @@ fn test_mov() {
     assert_eq!(vm.mem.read(0x27).unwrap(), 54321);
 
     vm.execute_mov(
+        // MOV R59 0x5923242526272829
         Instruction::with_data(
             Opcode::MOV_REG_IMM,
             &[Opcode::MOV_REG_IMM as u8, 7, 0x59, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29]
@@ -213,6 +240,7 @@ fn test_mov() {
     assert_eq!(vm.reg.get(&0x59), 0x23242526272829);
 
     vm.execute_mov(
+        // MOV [0x92CA] 0xAABBCCDDEE
         Instruction::with_data(
             Opcode::MOV_MEM_IMM,
             &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x92, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
@@ -220,4 +248,24 @@ fn test_mov() {
     );
 
     assert_eq!(vm.mem.read(0x92CA).unwrap(), 0xAABBCCDDEE);
+}
+
+#[test]
+fn test_jmp() {
+    let mut vm = VM::new();
+
+    vm.mem.write_bytes(0,
+        &[Opcode::JMP_IMM as u8, 1, 3]
+    );
+    vm.mem.write_bytes(1,
+        &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x92, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
+    );
+    vm.mem.write_bytes(3,
+        &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x93, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
+    );
+
+    vm.run();
+
+    assert_eq!(vm.mem.read(0x92CA), None);
+    assert_eq!(vm.mem.read(0x93CA).unwrap(), 0xAABBCCDDEE);
 }
