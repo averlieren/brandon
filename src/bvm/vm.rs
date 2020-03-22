@@ -59,7 +59,7 @@ impl VM {
 
                         if op != None {
                             let op = op.unwrap();
-                            let size = Instruction::get_size(op, bytes[i + 1]) as usize;
+                            let size = Instruction::get_size(op, (i + 1) as u8) as usize;
                             let bytes = self.mem.read_bytes(self.addr, (i + size) as u32);
                             let bytes = &bytes[i .. i+size];
 
