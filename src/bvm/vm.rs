@@ -124,7 +124,7 @@ impl VM {
             Opcode::CMP_LE_REG_IMM |
             Opcode::CMP_GE_REG_IMM |
             Opcode::CMP_LT_REG_IMM |
-            Opcode::CMP_GT_REG_IMM => {},
+            Opcode::CMP_GT_REG_IMM => self.execute_comparison(inst),
             Opcode::ADD |
             Opcode::FADD |
             Opcode::SUB |
@@ -167,9 +167,8 @@ impl VM {
             },
             Opcode::MOV_MEM_MEM => {
                 let d = 2 + (mov.bytes[1] >> 4) as usize;
-                let s = d + (mov.bytes[1] & 0xF) as usize;
                 let dst = u8arr_to_u32(&mov.bytes[2..d]);
-                let src = u8arr_to_u32(&mov.bytes[d..s]);
+                let src = u8arr_to_u32(&mov.bytes[d..]);
 
                 if self.mem.exists(&src) {
                     self.mem.write(dst, self.mem.read(src).unwrap());
@@ -185,9 +184,8 @@ impl VM {
             },
             Opcode::MOV_MEM_IMM => {
                 let d = 2 + (mov.bytes[1] >> 4) as usize;
-                let s = d + (mov.bytes[1] & 0xF) as usize;
                 let dst = u8arr_to_u32(&mov.bytes[2..d]);
-                let src = u8arr_to_u64(&mov.bytes[d..s]);
+                let src = u8arr_to_u64(&mov.bytes[d..]);
 
                 self.mem.write(dst, src);
             },
@@ -216,6 +214,35 @@ impl VM {
                 let addr = self.mem.read(jmp.bytes[1] as u32).unwrap() as u32;
                 self.addr = addr - 1; // see above as to why we subtract
             },
+            _ => panic!("Non jmp instruction found.")
+        }
+    }
+
+    fn execute_comparison(&mut self, comp: Instruction) {
+        match comp.opcode {
+            // we increment addr by 1 instead of 2 because the address is
+            // incremented again after the execution of this function
+            // NOTE: fix this?
+            Opcode::CMP_EQ_REG_REG =>
+                if !(self.reg.get(&comp.bytes[1]) == self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+            Opcode::CMP_LE_REG_REG =>
+                if !(self.reg.get(&comp.bytes[1]) <= self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+            Opcode::CMP_GE_REG_REG =>
+                if !(self.reg.get(&comp.bytes[1]) >= self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+            Opcode::CMP_LT_REG_REG =>
+                if !(self.reg.get(&comp.bytes[1]) < self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+            Opcode::CMP_GT_REG_REG =>
+                if !(self.reg.get(&comp.bytes[1]) > self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+            Opcode::CMP_EQ_REG_IMM =>
+                if !(self.reg.get(&comp.bytes[2]) == u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+            Opcode::CMP_LE_REG_IMM =>
+                if !(self.reg.get(&comp.bytes[2]) <= u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+            Opcode::CMP_GE_REG_IMM =>
+                if !(self.reg.get(&comp.bytes[2]) >= u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+            Opcode::CMP_LT_REG_IMM =>
+                if !(self.reg.get(&comp.bytes[2]) < u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+            Opcode::CMP_GT_REG_IMM =>
+                if !(self.reg.get(&comp.bytes[2]) > u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
             _ => panic!("Non jmp instruction found.")
         }
     }
@@ -294,4 +321,43 @@ fn test_jmp() {
 
     assert_eq!(vm.mem.read(0x92CA), None);
     assert_eq!(vm.mem.read(0x93CA).unwrap(), 0xAABBCCDDEE);
+}
+
+#[test]
+fn test_comparison() {
+    let mut vm = VM::new();
+
+    vm.reg.set(1, 1);
+    vm.reg.set(2, 2);
+    let instructions: Vec<&[u8]> = vec![
+        &[Opcode::CMP_EQ_REG_REG as u8, 0, 3], // CMPeq R00, R03
+        &[Opcode::JMP_IMM as u8, 1, 0x3], // JMP [0x3]
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0x2, 0xFF], // MOV [0x2] 0xFF
+        &[Opcode::CMP_GE_REG_REG as u8, 1, 0], // CMPge R01 R00
+        &[Opcode::JMP_IMM as u8, 1, 0x6], // JMP [0x6]
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0x2, 0xFF], // MOV [0x2] 0xFF
+        &[Opcode::CMP_LE_REG_REG as u8, 1, 2], // CMPle R01 R02
+        &[Opcode::JMP_IMM as u8, 1, 0x9], // JMP [0x9]
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0x2, 0xFF], // MOV [0x2] 0xFF
+        &[Opcode::CMP_GE_REG_REG as u8, 0, 3], // CMPge R00 R03
+        &[Opcode::JMP_IMM as u8, 1, 0xC], // JMP [0xC]
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0x2, 0xFF], // MOV [0x2] 0xFF
+        &[Opcode::CMP_LE_REG_REG as u8, 0, 3], // CMPle R00 R03
+        &[Opcode::JMP_IMM as u8, 1, 0xF], // JMP [0xF]
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0x2, 0xFF], // MOV [0x2] 0xFF
+        &[Opcode::CMP_GT_REG_REG as u8, 2, 1], // CMPgt R02 R01
+        &[Opcode::JMP_IMM as u8, 1, 0x12], // JMP [0x12]
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0x2, 0xFF], // MOV [0x2] 0xFF
+        &[Opcode::CMP_LT_REG_REG as u8, 0, 2], // CMPlt R00 R02
+        &[Opcode::JMP_IMM as u8, 1, 0x15], // JMP [0x15]
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0x2, 0xFF], // MOV [0x2] 0xFF
+    ];
+
+    for (i, inst) in instructions.iter().enumerate() {
+        vm.mem.write_bytes(i as u32, inst);
+    }
+
+    vm.run();
+
+    assert_ne!(vm.mem.read(0x2).unwrap(), 0xFF);
 }
