@@ -211,7 +211,7 @@ impl VM {
                 self.addr = addr - 1;
             },
             Opcode::JMP_REG => {
-                let addr = self.mem.read(jmp.bytes[1] as u32).unwrap() as u32;
+                let addr = self.reg.get(&jmp.bytes[1]) as u32;
                 self.addr = addr - 1; // see above as to why we subtract
             },
             _ => panic!("Non jmp instruction found.")
@@ -308,19 +308,58 @@ fn test_jmp() {
     let mut vm = VM::new();
 
     vm.mem.write_bytes(0,
+        // JMP [0x3]
         &[Opcode::JMP_IMM as u8, 1, 3]
     );
     vm.mem.write_bytes(1,
+        // MOV [0x92CA] 0xAABBCCDDEE
         &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x92, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
     );
     vm.mem.write_bytes(3,
-        &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x93, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
+        // MOV [0x93CA] 0xAABBFFDDEE
+        &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x93, 0xCA, 0xAA, 0xBB, 0xFF, 0xDD, 0xEE]
+    );
+
+    vm.reg.set(29, 8); // MOV R29 8
+    vm.mem.write_bytes(5,
+        // JMP R29
+        &[Opcode::JMP_REG as u8, 29]
+    );
+    vm.mem.write_bytes(6,
+        // MOV [0x92CA] 0xAABBCCDDEE
+        &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x92, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
+    );
+    vm.mem.write_bytes(8,
+        // MOV [0x94CA] 0xAABBCCFFEE
+        &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x94, 0xCA, 0xAA, 0xBB, 0xCC, 0xFF, 0xEE]
+    );
+
+    vm.mem.write_bytes(10,
+        // JSR 0xEE
+        &[Opcode::JSR as u8, 1, 0xEE]
+    );
+
+    vm.mem.write_bytes(0xEE,
+        // MOV [0xEE] 0x29
+        &[Opcode::MOV_MEM_IMM as u8, 0b0001_0001, 0xEE, 0x29]
+    );
+    vm.mem.write_bytes(0xEF,
+        // RET (JMP R255)
+        &[Opcode::JMP_REG as u8, 0xFF]
+    );
+
+    vm.mem.write_bytes(11,
+        // MOV [0x95CA] 0xAABBCCDDFF
+        &[Opcode::MOV_MEM_IMM as u8, 0b0010_0101, 0x95, 0xCA, 0xAA, 0xBB, 0xCC, 0xDD, 0xFF]
     );
 
     vm.run();
 
     assert_eq!(vm.mem.read(0x92CA), None);
-    assert_eq!(vm.mem.read(0x93CA).unwrap(), 0xAABBCCDDEE);
+    assert_eq!(vm.mem.read(0x93CA).unwrap(), 0xAABBFFDDEE);
+    assert_eq!(vm.mem.read(0x94CA).unwrap(), 0xAABBCCFFEE);
+    assert_eq!(vm.mem.read(0x95CA).unwrap(), 0xAABBCCDDFF);
+    assert_eq!(vm.mem.read(0xEE).unwrap(), 0x29);
 }
 
 #[test]
