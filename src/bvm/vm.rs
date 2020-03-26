@@ -125,17 +125,19 @@ impl VM {
             Opcode::CMP_GE_REG_IMM |
             Opcode::CMP_LT_REG_IMM |
             Opcode::CMP_GT_REG_IMM => self.execute_comparison(inst),
-            Opcode::ADD |
-            Opcode::FADD |
-            Opcode::SUB |
-            Opcode::FSUB |
-            Opcode::MUL |
-            Opcode::FMUL |
-            Opcode::DIV |
-            Opcode::FDIV => {},
+            // TODO: we should use signed integers rather than unsigned
+            // TODO: add sign extend function to support this the above
             Opcode::AND |
-            Opcode::NOT => {},
-            Opcode::CAL => {},
+            Opcode::ADD |
+            Opcode::SUB |
+            Opcode::MUL |
+            Opcode::DIV => self.execute_arithmetic(inst),
+            Opcode::FADD |
+            Opcode::FSUB |
+            Opcode::FMUL |
+            Opcode::FDIV => self.execute_fp_arithmetic(inst),
+            Opcode::NOT => self.execute_not(inst),
+            Opcode::CAL => self.execute_call(inst),
             Opcode::FILE_LOAD => {},
             _ => {}
         }
@@ -244,6 +246,91 @@ impl VM {
             Opcode::CMP_GT_REG_IMM =>
                 if !(self.reg.get(&comp.bytes[2]) > u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
             _ => panic!("Non jmp instruction found.")
+        }
+    }
+
+    fn execute_arithmetic(&self, arith: Instruction) {
+        let dst = arith.bytes[2];
+
+        let mut src1: u64 = 0;
+        let mut src2: u64 = 0;
+
+        match arith.bytes[1] >> 6 {
+            0 => {
+                src1 = self.reg.get(&arith.bytes[3]);
+                src2 = self.reg.get(&arith.bytes[4]);
+            },
+            1 => {
+                src1 = self.reg.get(&arith.bytes[3]);
+                src2 = u8arr_to_u64(&arith.bytes[4..]);
+            },
+            2 => {
+                let d = 2 + (arith.bytes[1] & 0xF) as usize;
+                src1 = u8arr_to_u64(&arith.bytes[2..d]);
+                src2 = u8arr_to_u64(&arith.bytes[d..]);
+            },
+            _ => {}
+        }
+
+        match arith.opcode {
+            Opcode::ADD => self.reg.set(dst, src1 + src2),
+            Opcode::SUB => self.reg.set(dst, src1 - src2),
+            Opcode::MUL => self.reg.set(dst, src1 * src2),
+            Opcode::DIV => self.reg.set(dst, src1 / src2),
+            _ => {}
+        }
+    }
+
+    fn execute_fp_arithmetic(&self, arith: Instruction) {
+        let dst = arith.bytes[2];
+
+        let mut src1: u64 = 0;
+        let mut src2: u64 = 0;
+
+        match arith.bytes[1] >> 6 {
+            0 => {
+                src1 = self.reg.get(&arith.bytes[3]);
+                src2 = self.reg.get(&arith.bytes[4]);
+            },
+            1 => {
+                src1 = self.reg.get(&arith.bytes[3]);
+                src2 = u8arr_to_u64(&arith.bytes[4..]);
+            },
+            2 => {
+                let d = 2 + (arith.bytes[1] & 0xF) as usize;
+                src1 = u8arr_to_u64(&arith.bytes[2..d]);
+                src2 = u8arr_to_u64(&arith.bytes[d..]);
+            },
+            _ => {}
+        }
+
+        let src1 = src1 as f64;
+        let src2 = src2 as f64;
+
+        match arith.opcode {
+            Opcode::FADD => self.reg.set(dst, (src1 + src2) as u64),
+            Opcode::FSUB => self.reg.set(dst, (src1 - src2) as u64),
+            Opcode::FMUL => self.reg.set(dst, (src1 * src2) as u64),
+            Opcode::FDIV => self.reg.set(dst, (src1 / src2) as u64),
+            _ => {}
+        }
+    }
+
+    fn execute_not(&self, inst: Instruction) {
+        let dst = inst.bytes[2];
+
+        match inst.bytes[1] >> 6 {
+            0 => self.reg.set(dst, !self.reg.get(&inst.bytes[3])),
+            1 => self.reg.set(dst, !u8arr_to_u64(&inst.bytes[3..])),
+            _ => {}
+        }
+    }
+
+    fn execute_call(&mut self, inst: Instruction) {
+        match inst.bytes[1] {
+            // TODO: add more calls
+            0x9D => self.running = false, // HLT
+            _ => {}
         }
     }
 }
