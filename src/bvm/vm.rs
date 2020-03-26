@@ -143,17 +143,17 @@ impl VM {
         }
     }
 
-    fn execute_mov(&self, mov: Instruction) {
-        match mov.opcode {
+    fn execute_mov(&self, inst: Instruction) {
+        match inst.opcode {
             Opcode::MOV_REG_REG => {
-                let dst = mov.bytes[1];
-                let src = mov.bytes[2];
+                let dst = inst.bytes[1];
+                let src = inst.bytes[2];
 
                 self.reg.set(dst, self.reg.get(&src));
             },
             Opcode::MOV_REG_MEM => {
-                let dst = mov.bytes[1];
-                let src = u8arr_to_u32(&mov.bytes[2..=5]);
+                let dst = inst.bytes[1];
+                let src = u8arr_to_u32(&inst.bytes[2..=5]);
 
                 if self.mem.exists(&src) {
                     self.reg.set(dst, self.mem.read(src).unwrap());
@@ -162,15 +162,15 @@ impl VM {
                 }
             },
             Opcode::MOV_MEM_REG => {
-                let dst = u8arr_to_u32(&mov.bytes[1..=4]);
-                let src = mov.bytes[5];
+                let dst = u8arr_to_u32(&inst.bytes[1..=4]);
+                let src = inst.bytes[5];
 
                 self.mem.write(dst, self.reg.get(&src));
             },
             Opcode::MOV_MEM_MEM => {
-                let d = 2 + (mov.bytes[1] >> 4) as usize;
-                let dst = u8arr_to_u32(&mov.bytes[2..d]);
-                let src = u8arr_to_u32(&mov.bytes[d..]);
+                let d = 2 + (inst.bytes[1] >> 4) as usize;
+                let dst = u8arr_to_u32(&inst.bytes[2..d]);
+                let src = u8arr_to_u32(&inst.bytes[d..]);
 
                 if self.mem.exists(&src) {
                     self.mem.write(dst, self.mem.read(src).unwrap());
@@ -179,15 +179,15 @@ impl VM {
                 }
             },
             Opcode::MOV_REG_IMM => {
-                let dst = mov.bytes[2];
-                let src = u8arr_to_u64(&mov.bytes[3..]);
+                let dst = inst.bytes[2];
+                let src = u8arr_to_u64(&inst.bytes[3..]);
 
                 self.reg.set(dst, src);
             },
             Opcode::MOV_MEM_IMM => {
-                let d = 2 + (mov.bytes[1] >> 4) as usize;
-                let dst = u8arr_to_u32(&mov.bytes[2..d]);
-                let src = u8arr_to_u64(&mov.bytes[d..]);
+                let d = 2 + (inst.bytes[1] >> 4) as usize;
+                let dst = u8arr_to_u32(&inst.bytes[2..d]);
+                let src = u8arr_to_u64(&inst.bytes[d..]);
 
                 self.mem.write(dst, src);
             },
@@ -195,13 +195,13 @@ impl VM {
         }
     }
 
-    fn execute_jump(&mut self, jmp: Instruction) {
-        match jmp.opcode {
+    fn execute_jump(&mut self, inst: Instruction) {
+        match inst.opcode {
             Opcode::JMP_IMM |
             Opcode::JSR => {
-                let addr = u8arr_to_u32(&jmp.bytes[2..]);
+                let addr = u8arr_to_u32(&inst.bytes[2..]);
 
-                if jmp.opcode == Opcode::JSR {
+                if inst.opcode == Opcode::JSR {
                     // Store incremented address in register 255
                     // upon RET (JMP R255), jump back to this stored addr.
                     self.reg.set(255, (self.addr + 1) as u64);
@@ -213,66 +213,66 @@ impl VM {
                 self.addr = addr - 1;
             },
             Opcode::JMP_REG => {
-                let addr = self.reg.get(&jmp.bytes[1]) as u32;
+                let addr = self.reg.get(&inst.bytes[1]) as u32;
                 self.addr = addr - 1; // see above as to why we subtract
             },
             _ => panic!("Non jmp instruction found.")
         }
     }
 
-    fn execute_comparison(&mut self, comp: Instruction) {
-        match comp.opcode {
+    fn execute_comparison(&mut self, inst: Instruction) {
+        match inst.opcode {
             // we increment addr by 1 instead of 2 because the address is
             // incremented again after the execution of this function
             // NOTE: fix this?
             Opcode::CMP_EQ_REG_REG =>
-                if !(self.reg.get(&comp.bytes[1]) == self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+                if !(self.reg.get(&inst.bytes[1]) == self.reg.get(&inst.bytes[2])) {self.addr += 1; },
             Opcode::CMP_LE_REG_REG =>
-                if !(self.reg.get(&comp.bytes[1]) <= self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+                if !(self.reg.get(&inst.bytes[1]) <= self.reg.get(&inst.bytes[2])) {self.addr += 1; },
             Opcode::CMP_GE_REG_REG =>
-                if !(self.reg.get(&comp.bytes[1]) >= self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+                if !(self.reg.get(&inst.bytes[1]) >= self.reg.get(&inst.bytes[2])) {self.addr += 1; },
             Opcode::CMP_LT_REG_REG =>
-                if !(self.reg.get(&comp.bytes[1]) < self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+                if !(self.reg.get(&inst.bytes[1]) < self.reg.get(&inst.bytes[2])) {self.addr += 1; },
             Opcode::CMP_GT_REG_REG =>
-                if !(self.reg.get(&comp.bytes[1]) > self.reg.get(&comp.bytes[2])) {self.addr += 1; },
+                if !(self.reg.get(&inst.bytes[1]) > self.reg.get(&inst.bytes[2])) {self.addr += 1; },
             Opcode::CMP_EQ_REG_IMM =>
-                if !(self.reg.get(&comp.bytes[2]) == u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+                if !(self.reg.get(&inst.bytes[2]) == u8arr_to_u64(&inst.bytes[3..])) { self.addr += 1 },
             Opcode::CMP_LE_REG_IMM =>
-                if !(self.reg.get(&comp.bytes[2]) <= u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+                if !(self.reg.get(&inst.bytes[2]) <= u8arr_to_u64(&inst.bytes[3..])) { self.addr += 1 },
             Opcode::CMP_GE_REG_IMM =>
-                if !(self.reg.get(&comp.bytes[2]) >= u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+                if !(self.reg.get(&inst.bytes[2]) >= u8arr_to_u64(&inst.bytes[3..])) { self.addr += 1 },
             Opcode::CMP_LT_REG_IMM =>
-                if !(self.reg.get(&comp.bytes[2]) < u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+                if !(self.reg.get(&inst.bytes[2]) < u8arr_to_u64(&inst.bytes[3..])) { self.addr += 1 },
             Opcode::CMP_GT_REG_IMM =>
-                if !(self.reg.get(&comp.bytes[2]) > u8arr_to_u64(&comp.bytes[3..])) { self.addr += 1 },
+                if !(self.reg.get(&inst.bytes[2]) > u8arr_to_u64(&inst.bytes[3..])) { self.addr += 1 },
             _ => panic!("Non jmp instruction found.")
         }
     }
 
-    fn execute_arithmetic(&self, arith: Instruction) {
-        let dst = arith.bytes[2];
+    fn execute_arithmetic(&self, inst: Instruction) {
+        let dst = inst.bytes[2];
 
         let mut src1: u64 = 0;
         let mut src2: u64 = 0;
 
-        match arith.bytes[1] >> 6 {
+        match inst.bytes[1] >> 6 {
             0 => {
-                src1 = self.reg.get(&arith.bytes[3]);
-                src2 = self.reg.get(&arith.bytes[4]);
+                src1 = self.reg.get(&inst.bytes[3]);
+                src2 = self.reg.get(&inst.bytes[4]);
             },
             1 => {
-                src1 = self.reg.get(&arith.bytes[3]);
-                src2 = u8arr_to_u64(&arith.bytes[4..]);
+                src1 = self.reg.get(&inst.bytes[3]);
+                src2 = u8arr_to_u64(&inst.bytes[4..]);
             },
             2 => {
-                let d = 2 + (arith.bytes[1] & 0xF) as usize;
-                src1 = u8arr_to_u64(&arith.bytes[2..d]);
-                src2 = u8arr_to_u64(&arith.bytes[d..]);
+                let d = 2 + (inst.bytes[1] & 0xF) as usize;
+                src1 = u8arr_to_u64(&inst.bytes[2..d]);
+                src2 = u8arr_to_u64(&inst.bytes[d..]);
             },
             _ => {}
         }
 
-        match arith.opcode {
+        match inst.opcode {
             Opcode::ADD => self.reg.set(dst, src1 + src2),
             Opcode::SUB => self.reg.set(dst, src1 - src2),
             Opcode::MUL => self.reg.set(dst, src1 * src2),
@@ -281,25 +281,25 @@ impl VM {
         }
     }
 
-    fn execute_fp_arithmetic(&self, arith: Instruction) {
-        let dst = arith.bytes[2];
+    fn execute_fp_arithmetic(&self, inst: Instruction) {
+        let dst = inst.bytes[2];
 
         let mut src1: u64 = 0;
         let mut src2: u64 = 0;
 
-        match arith.bytes[1] >> 6 {
+        match inst.bytes[1] >> 6 {
             0 => {
-                src1 = self.reg.get(&arith.bytes[3]);
-                src2 = self.reg.get(&arith.bytes[4]);
+                src1 = self.reg.get(&inst.bytes[3]);
+                src2 = self.reg.get(&inst.bytes[4]);
             },
             1 => {
-                src1 = self.reg.get(&arith.bytes[3]);
-                src2 = u8arr_to_u64(&arith.bytes[4..]);
+                src1 = self.reg.get(&inst.bytes[3]);
+                src2 = u8arr_to_u64(&inst.bytes[4..]);
             },
             2 => {
-                let d = 2 + (arith.bytes[1] & 0xF) as usize;
-                src1 = u8arr_to_u64(&arith.bytes[2..d]);
-                src2 = u8arr_to_u64(&arith.bytes[d..]);
+                let d = 2 + (inst.bytes[1] & 0xF) as usize;
+                src1 = u8arr_to_u64(&inst.bytes[2..d]);
+                src2 = u8arr_to_u64(&inst.bytes[d..]);
             },
             _ => {}
         }
@@ -307,7 +307,7 @@ impl VM {
         let src1 = src1 as f64;
         let src2 = src2 as f64;
 
-        match arith.opcode {
+        match inst.opcode {
             Opcode::FADD => self.reg.set(dst, (src1 + src2) as u64),
             Opcode::FSUB => self.reg.set(dst, (src1 - src2) as u64),
             Opcode::FMUL => self.reg.set(dst, (src1 * src2) as u64),
