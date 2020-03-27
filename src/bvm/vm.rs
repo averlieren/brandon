@@ -329,8 +329,11 @@ impl VM {
     fn execute_call(&mut self, inst: Instruction) {
         match inst.bytes[1] {
             // TODO: add more calls
-            0x9D => self.running = false, // HLT
-            _ => {}
+            // PNT
+            0x9A => print!("{}", self.mem.read_utf16(self.reg.get(&0) as u32)),
+            // HLT
+            0x9D => self.running = false,
+            _ => panic!("Unknown call {:#04X}", inst.bytes[1])
         }
     }
 }
