@@ -180,9 +180,9 @@ fn test_instruction_get_size() {
         0b01000000, // MOV_REG_IMM, byte encodes how large IMM is
         0b00110100, // MOV_MEM_MEM, byte encodes how large mem addrs are
         0b00110011, // SWP
-        0b00110000, // JMP_IMM, byte encodes how large IMM is
+        0b00000011, // JMP_IMM, byte encodes how large IMM is
         0,
-        0b01000000, // JSR, byte encodes how large mem addr is
+        0b00000100, // JSR, byte encodes how large mem addr is
         0,
         0b00110000, // CMP_*_REG_IMM, byte encodes how large IMM is
 
@@ -202,19 +202,19 @@ fn test_instruction_get_size() {
     let expected: [u8; 17] = [
         OPCODE + REG + REG, // 3
         OPCODE + REG + MEM, // 6
-        OPCODE + OPTION + REG + 4, // 6
-        OPCODE + OPTION + 3 + 4, // 8
-        OPCODE + OPTION + 6, // 7
-        OPCODE + OPTION + 3, // 4
+        OPCODE + OPTION + REG + 4, // 7
+        OPCODE + OPTION + 3 + 4, // 9
+        OPCODE + OPTION + 6, // 8
+        OPCODE + OPTION + 3, // 5
         OPCODE + REG, // 2
-        OPCODE + OPTION + 4, // 5
+        OPCODE + OPTION + 4, // 6
         OPCODE + REG + REG, // 3
-        OPCODE + OPTION + REG + 3, // 5
-        OPCODE + OPTION + REG + REG + REG, // 4
-        OPCODE + OPTION + REG + REG + 4, // 7
-        OPCODE + OPTION + REG + 2 * (3), // 8
-        OPCODE + OPTION + REG + REG, // 3
-        OPCODE + OPTION + REG + 3, // 5
+        OPCODE + OPTION + REG + 3, // 6
+        OPCODE + OPTION + REG + REG + REG, // 5
+        OPCODE + OPTION + REG + REG + 4, // 8
+        OPCODE + OPTION + REG + 2 * (3), // 9
+        OPCODE + OPTION + REG + REG, // 4
+        OPCODE + OPTION + REG + 3, // 6
         OPCODE + 1, // 2
         OPCODE + 4 // 5
     ];
